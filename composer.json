@@ -12,7 +12,7 @@
         "laravel/jetstream": "^5.4",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.10.1",
-        "mongodb/laravel-mongodb": "^5.6",
+        "mongodb/laravel-mongodb": "^5.7",
         "tightenco/ziggy": "^2.0"
     },
     "require-dev": {

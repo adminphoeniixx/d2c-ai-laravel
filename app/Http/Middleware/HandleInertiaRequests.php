@@ -4,6 +4,9 @@ namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
 use Inertia\Middleware;
+use App\Models\ShopifyConnection;
+use Illuminate\Support\Facades\Auth;
+
 
 class HandleInertiaRequests extends Middleware
 {
@@ -35,9 +38,19 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
-        return [
-            ...parent::share($request),
-            //
-        ];
+        return array_merge(parent::share($request), [
+
+        'connection' => function () {
+
+            if (!Auth::check()) {
+                return null;
+            }
+
+            return ShopifyConnection::where('tenant_id', Auth::user()->tenant_id)
+                ->where('is_active', true)
+                ->first();
+        },
+
+    ]);
     }
 }

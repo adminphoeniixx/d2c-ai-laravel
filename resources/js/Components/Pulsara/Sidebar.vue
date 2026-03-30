@@ -1,5 +1,9 @@
 <script setup>
-import { Link } from '@inertiajs/vue3'
+import { Link, usePage } from '@inertiajs/vue3'
+
+const page = usePage()
+
+const shopifyConnected = page.props.connection !== null && page.props.connection !== undefined
 </script>
 
 <template>
@@ -39,7 +43,10 @@ P&L Report
 Expenses
 </Link>
 
-<Link href="/brand/orders" class="block px-4 py-3 rounded-lg hover:bg-white/5">
+<Link
+href="/brand/shopify/orders"
+class="block px-4 py-3 rounded-lg hover:bg-white/5"
+>
 Shopify Orders
 </Link>
 
@@ -98,20 +105,37 @@ Integrations
 
 <div class="space-y-2 text-sm">
 
-<div class="flex justify-between items-center px-3 py-2 bg-[#121a30] rounded-lg">
+<Link
+href="/brand/integrations/shopify"
+class="flex justify-between items-center px-3 py-2 bg-[#121a30] rounded-lg hover:bg-[#18203a]"
+>
 <span>Shopify</span>
-<span class="text-green-400 text-xs">Live</span>
-</div>
 
-<div class="flex justify-between items-center px-3 py-2 bg-[#121a30] rounded-lg">
+<span v-if="shopifyConnected" class="text-green-400 text-xs">
+Connected
+</span>
+
+<span v-else class="text-gray-400 text-xs">
+Connect
+</span>
+
+</Link>
+
+<Link
+href="/brand/integrations/meta"
+class="flex justify-between items-center px-3 py-2 bg-[#121a30] rounded-lg hover:bg-[#18203a]"
+>
 <span>Meta Ads</span>
-<span class="text-green-400 text-xs">Live</span>
-</div>
+<span class="text-gray-400 text-xs">Connect</span>
+</Link>
 
-<div class="flex justify-between items-center px-3 py-2 bg-[#121a30] rounded-lg">
+<Link
+href="/brand/integrations/google"
+class="flex justify-between items-center px-3 py-2 bg-[#121a30] rounded-lg hover:bg-[#18203a]"
+>
 <span>Google Ads</span>
-<span class="text-yellow-400 text-xs">Syncing</span>
-</div>
+<span class="text-gray-400 text-xs">Connect</span>
+</Link>
 
 </div>
 
