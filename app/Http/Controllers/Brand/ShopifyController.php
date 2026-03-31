@@ -17,23 +17,37 @@ class ShopifyController extends Controller
     /**
      * Redirect merchant to Shopify install page
      */
-    public function connect(Request $request)
+   public function connect(Request $request)
     {
-        $shop = $request->shop;
+        $shop = trim($request->shop);
 
         if (!$shop) {
             return back()->with('error', 'Shop domain required');
+        }
+
+        // normalize domain
+        if (!str_contains($shop, '.myshopify.com')) {
+            $shop = $shop . '.myshopify.com';
+        }
+
+        // validate domain format
+        if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9\-]*\.myshopify\.com$/', $shop)) {
+            return back()->with('error', 'Invalid Shopify store domain');
         }
 
         $clientId = config('services.shopify.client_id');
         $redirect = config('services.shopify.redirect');
         $scopes = config('services.shopify.scopes');
 
+        $state = bin2hex(random_bytes(16));
+
+        session(['shopify_state' => $state]);
+
         $installUrl = "https://{$shop}/admin/oauth/authorize?" . http_build_query([
             'client_id' => $clientId,
             'scope' => $scopes,
             'redirect_uri' => $redirect,
-            'state' => csrf_token()
+            'state' => $state,
         ]);
 
         return redirect()->away($installUrl);
@@ -45,6 +59,9 @@ class ShopifyController extends Controller
      */
     public function callback(Request $request)
     {
+        if ($request->state !== session('shopify_state')) {
+            abort(403, 'Invalid OAuth state');
+        }
 
         $shop = $request->shop;
         $code = $request->code;
