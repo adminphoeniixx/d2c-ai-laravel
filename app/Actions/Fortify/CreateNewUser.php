@@ -65,11 +65,11 @@ class CreateNewUser implements CreatesNewUsers
 
         // create first collection (Mongo creates DB automatically)
         \DB::connection('mongodb')
-        ->table('shopify_orders')
-        ->insert([
-            'init' => true,
-            'created_at' => now(),
-        ]);
+            ->table('shopify_orders')
+            ->insert([
+                'init' => true,
+                'created_at' => now(),
+            ]);
 
         return $user;
     }
