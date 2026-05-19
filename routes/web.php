@@ -1,58 +1,51 @@
 <?php
 
-use Illuminate\Foundation\Application;
+use App\Http\Controllers\Auth\CompanyRegistrationController;
+use App\Http\Controllers\LandingController;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Auth;
-use App\Models\ShopifyConnection;
 
-Route::get('/', function () {
-    return Inertia::render('Landing');
+/*
+|--------------------------------------------------------------------------
+| Public / Central Routes
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/', [LandingController::class, 'index'])->name('landing');
+Route::get('/pricing',  [LandingController::class, 'pricing'])->name('pricing');
+Route::get('/features', [LandingController::class, 'features'])->name('features');
+
+// Company registration — creates a Company (tenant) + owner user
+Route::middleware('guest')->group(function () {
+    Route::get('/register/company',  [CompanyRegistrationController::class, 'create'])->name('company.register');
+    Route::post('/register/company', [CompanyRegistrationController::class, 'store'])->name('company.register.store');
 });
 
+// After login, Jetstream redirects here — we resolve the user's company and
+// send them to their tenant dashboard.
+Route::middleware([
+    'auth:sanctum',
+    config('jetstream.auth_session'),
+    'verified',
+])->get('/dashboard', function () {
+    $user = request()->user();
 
-
-
-Route::get('/brand/shopify/test', function () {
-
-    $connection = ShopifyConnection::where('tenant_id', Auth::user()->tenant_id)
-        ->where('is_active', true)
-        ->first();
-
-    if (!$connection) {
-        return 'Shopify not connected';
+    // Admins go to admin panel
+    if ($user->is_admin) {
+        return redirect()->route('admin.dashboard');
     }
 
-    $response = Http::withHeaders([
-        'X-Shopify-Access-Token' => $connection->access_token,
-        'Content-Type' => 'application/json'
-    ])->get("https://{$connection->shop}/admin/api/2024-04/shop.json");
+    // Company users go to their tenant dashboard
+    abort_unless($user->company, 403, 'No company associated with this user.');
+    return redirect()->route('tenant.dashboard', ['tenant' => $user->company->slug]);
+})->name('dashboard');
 
-    return $response->json();
-});
-
-
-
-Route::get('/brand/shopify/orders-test', function () {
-
-    $connection = ShopifyConnection::where('tenant_id', Auth::user()->tenant_id)
-        ->where('is_active', true)
-        ->first();
-
-    if (!$connection) {
-        return 'Shopify not connected';
-    }
-
-   $response = Http::withHeaders([
-    'X-Shopify-Access-Token' => $connection->access_token,
-])->get("https://{$connection->shop}/admin/api/2024-04/orders.json", [
-    'status' => 'any',
-    'limit' => 10,
-    'fields' => 'id,order_number,total_price,currency,financial_status,fulfillment_status,created_at'
-]);
-
-    return $response->json();
-});
-
-
+/*
+|--------------------------------------------------------------------------
+| Central OAuth Callbacks (not behind /app/{tenant})
+|--------------------------------------------------------------------------
+| Shopify doesn't support wildcard redirect URLs, so the callback hits a
+| central route. We decode the company from the state parameter and redirect
+| to the tenant context.
+*/
+Route::get('/integrations/shopify/callback', [\App\Http\Controllers\Integrations\ShopifyCentralCallbackController::class, 'handle'])
+    ->name('integrations.shopify.callback.central');

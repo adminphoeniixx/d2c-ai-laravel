@@ -3,56 +3,35 @@
 namespace App\Actions\Fortify;
 
 use App\Models\User;
-use App\Models\Tenant;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Str;
 use Laravel\Fortify\Contracts\CreatesNewUsers;
+use Laravel\Jetstream\Jetstream;
 
 class CreateNewUser implements CreatesNewUsers
 {
+    use PasswordValidationRules;
+
+    /**
+     * Validate and create a newly registered user.
+     *
+     * @param  array<string, string>  $input
+     */
     public function create(array $input): User
     {
         Validator::make($input, [
-            'company_name' => ['required', 'string', 'max:255'],
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
-            'password' => ['required', 'string', 'min:6', 'confirmed'],
+            'password' => $this->passwordRules(),
+            'terms' => Jetstream::hasTermsAndPrivacyPolicyFeature() ? ['accepted', 'required'] : '',
         ])->validate();
 
-        /*
-        |--------------------------------------------------------------------------
-        | 1. Generate Mongo DB name
-        |--------------------------------------------------------------------------
-        */
-        $companyName = $input['company_name'] ?? $input['name'] . "'s Company";
-
-        $databaseName = 'tenant_' . Str::lower(Str::random(8));
-
-        /*
-        |--------------------------------------------------------------------------
-        | 2. Create Tenant
-        |--------------------------------------------------------------------------
-        */
-        $tenant = Tenant::create([
-            'name' => Str::slug($companyName),
-            'company_name' => $companyName,
-            'slug' => Str::slug($companyName) . '-' . Str::random(5),
-            'database_name' => $databaseName, // 🔥 IMPORTANT
-        ]);
-
-        /*
-        |--------------------------------------------------------------------------
-        | 3. Create User
-        |--------------------------------------------------------------------------
-        */
-        $user = User::create([
+        return User::create([
             'name' => $input['name'],
             'email' => $input['email'],
             'password' => Hash::make($input['password']),
-            'role' => 'brand',
-            'tenant_id' => $tenant->id,
         ]);
+<<<<<<< Updated upstream
 
         /*
         |--------------------------------------------------------------------------
@@ -72,5 +51,7 @@ class CreateNewUser implements CreatesNewUsers
             ]);
 
         return $user;
+=======
+>>>>>>> Stashed changes
     }
 }

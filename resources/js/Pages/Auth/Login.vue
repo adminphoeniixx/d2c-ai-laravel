@@ -1,72 +1,69 @@
 <script setup>
-import { Link, useForm } from '@inertiajs/vue3'
+import { Head, Link, useForm } from '@inertiajs/vue3';
+import GuestLayout from '@/Layouts/GuestLayout.vue';
+
+defineProps({
+    canResetPassword: { type: Boolean, default: true },
+    status: { type: String, default: '' },
+});
 
 const form = useForm({
     email: '',
     password: '',
-})
+    remember: false,
+});
 
-const submit = () => {
-    form.post('/login')
+function submit() {
+    form.transform(data => ({ ...data, remember: form.remember ? 'on' : '' }))
+        .post(route('login'), {
+            onFinish: () => form.reset('password'),
+        });
 }
 </script>
 
 <template>
-<div class="min-h-screen bg-[#0B0F1A] text-white flex items-center justify-center relative overflow-hidden">
+    <Head title="Sign in" />
+    <GuestLayout>
+        <section class="min-h-[calc(100vh-160px)] flex items-center justify-center py-16 px-6">
+            <div class="w-full max-w-md">
+                <div class="mb-8 text-center">
+                    <h1 class="text-[28px] font-extrabold text-white">Welcome back</h1>
+                    <p class="mt-2 text-[13px] text-ink-2">Sign in to your workspace</p>
+                </div>
 
-    <!-- Background glow -->
-    <div class="absolute -top-40 -left-40 w-[500px] h-[500px] bg-purple-600/20 rounded-full blur-[150px]"></div>
-    <div class="absolute -bottom-40 -right-40 w-[500px] h-[500px] bg-pink-600/20 rounded-full blur-[150px]"></div>
+                <div v-if="status" class="card mb-4 border-emerald/30 text-[12.5px] text-emerald">{{ status }}</div>
 
-    <div class="relative w-full max-w-md bg-[#111827] border border-white/5 rounded-2xl p-10">
+                <form class="card space-y-4" @submit.prevent="submit">
+                    <div>
+                        <label class="pulsara-label">Email</label>
+                        <input v-model="form.email" type="email" autofocus required class="pulsara-input" />
+                        <div v-if="form.errors.email" class="mt-1 text-[11px] text-rose">{{ form.errors.email }}</div>
+                    </div>
 
-        <!-- Logo -->
-        <div class="flex items-center gap-3 mb-8 justify-center">
-            <div class="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center">
-                ⚡
+                    <div>
+                        <label class="pulsara-label">Password</label>
+                        <input v-model="form.password" type="password" required class="pulsara-input" />
+                        <div v-if="form.errors.password" class="mt-1 text-[11px] text-rose">{{ form.errors.password }}</div>
+                    </div>
+
+                    <div class="flex items-center justify-between">
+                        <label class="flex items-center gap-2 text-[12.5px] text-ink-2 cursor-pointer select-none">
+                            <input v-model="form.remember" type="checkbox" class="accent-brand-600" />
+                            Remember me
+                        </label>
+                        <Link v-if="canResetPassword" :href="route('password.request')" class="text-[12px] text-brand-300 hover:underline">Forgot?</Link>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-full py-3 text-[14px]" :disabled="form.processing">
+                        {{ form.processing ? 'Signing in…' : 'Sign in →' }}
+                    </button>
+
+                    <p class="text-center text-[12px] text-ink-3">
+                        New to Pulsara?
+                        <Link :href="route('company.register')" class="text-brand-300 hover:underline">Create a workspace</Link>
+                    </p>
+                </form>
             </div>
-            <div>
-                <div class="font-semibold text-lg">Pulsara</div>
-                <div class="text-xs text-gray-400">D2C Ops AI</div>
-            </div>
-        </div>
-
-        <h2 class="text-2xl font-semibold text-center mb-8">
-            Welcome Back
-        </h2>
-
-        <form @submit.prevent="submit" class="space-y-5">
-
-            <input
-                v-model="form.email"
-                type="email"
-                placeholder="Email"
-                class="w-full bg-[#0B0F1A] border border-white/10 p-4 rounded-xl focus:outline-none focus:border-purple-500"
-            />
-
-            <input
-                v-model="form.password"
-                type="password"
-                placeholder="Password"
-                class="w-full bg-[#0B0F1A] border border-white/10 p-4 rounded-xl focus:outline-none focus:border-purple-500"
-            />
-
-            <button
-                class="w-full bg-gradient-to-r from-purple-600 to-pink-500 py-4 rounded-xl font-semibold"
-            >
-                Login
-            </button>
-
-        </form>
-
-        <div class="text-center mt-6 text-sm text-gray-400">
-            Don’t have an account?
-            <Link href="/register" class="text-purple-400 hover:underline">
-                Create one
-            </Link>
-        </div>
-
-    </div>
-
-</div>
+        </section>
+    </GuestLayout>
 </template>

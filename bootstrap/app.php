@@ -1,38 +1,48 @@
 <?php
 
+declare(strict_types=1);
+
+use App\Http\Middleware\EnsureAdmin;
+use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\InitializeTenancyByPath;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Support\Facades\Route;
-use App\Http\Middleware\AdminMiddleware;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
+        channels: __DIR__.'/../routes/channels.php',
         health: '/up',
         then: function () {
             Route::middleware('web')
+                ->prefix(config('app.admin_prefix', 'admin'))
+                ->name('admin.')
                 ->group(base_path('routes/admin.php'));
 
             Route::middleware('web')
-                ->group(base_path('routes/brand.php'));
-        }
+                ->prefix(config('app.tenant_prefix', 'app').'/{tenant}')
+                ->name('tenant.')
+                ->group(base_path('routes/tenant.php'));
+        },
     )
-    ->withMiddleware(function (Middleware $middleware): void {
+    ->withMiddleware(function (Middleware $middleware) {
         $middleware->web(append: [
-            \App\Http\Middleware\HandleInertiaRequests::class,
-            \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
-        ]);
-        $middleware->alias([
-            'admin' => AdminMiddleware::class,
-            'brand' => \App\Http\Middleware\BrandMiddleware::class,
-            'tenant' => \App\Http\Middleware\SetTenant::class,
+            HandleInertiaRequests::class,
+            AddLinkHeadersForPreloadedAssets::class,
         ]);
 
-        //
+        $middleware->alias([
+            'tenant'     => InitializeTenancyByPath::class,
+            'admin'      => EnsureAdmin::class,
+            'role'       => \Spatie\Permission\Middleware\RoleMiddleware::class,
+            'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
+        ]);
     })
-    ->withExceptions(function (Exceptions $exceptions): void {
+    ->withExceptions(function (Exceptions $exceptions) {
         //
     })->create();

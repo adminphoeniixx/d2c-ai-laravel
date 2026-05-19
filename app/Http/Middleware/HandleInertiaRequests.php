@@ -1,56 +1,67 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
 use Inertia\Middleware;
-use App\Models\ShopifyConnection;
-use Illuminate\Support\Facades\Auth;
-
 
 class HandleInertiaRequests extends Middleware
 {
-    /**
-     * The root template that's loaded on the first page visit.
-     *
-     * @see https://inertiajs.com/server-side-setup#root-template
-     *
-     * @var string
-     */
     protected $rootView = 'app';
 
-    /**
-     * Determines the current asset version.
-     *
-     * @see https://inertiajs.com/asset-versioning
-     */
     public function version(Request $request): ?string
     {
         return parent::version($request);
     }
 
-    /**
-     * Define the props that are shared by default.
-     *
-     * @see https://inertiajs.com/shared-data
-     *
-     * @return array<string, mixed>
-     */
     public function share(Request $request): array
     {
+        /** @var \App\Models\User|null $user */
+        $user    = $request->user();
+        $company = $user?->company;
+
         return array_merge(parent::share($request), [
+            'app' => [
+                'name'    => config('app.name'),
+                'env'     => app()->environment(),
+                'brand'   => 'Pulsara',
+                'tagline' => 'D2C Ops AI',
+            ],
 
-        'connection' => function () {
+            'auth' => [
+                'user' => $user ? [
+                    'id'          => $user->id,
+                    'name'        => $user->name,
+                    'email'       => $user->email,
+                    'initials'    => $user->initials(),
+                    'is_admin'    => (bool) $user->is_admin,
+                    'company_id'  => $user->company_id,
+                    'roles'       => $user->getRoleNames(),
+                    'permissions' => $user->getAllPermissions()->pluck('name'),
+                ] : null,
+            ],
 
-            if (!Auth::check()) {
-                return null;
-            }
+            'company' => $company ? [
+                'id'     => $company->id,
+                'slug'   => $company->slug,
+                'name'   => $company->name,
+                'status' => $company->status,
+                'plan'   => $company->plan,
+                'gstin'  => $company->gstin,
+                'business_category' => $company->business_category,
+                'integrations' => [
+                    'shopify' => (bool) $company->shopify_connected_at,
+                    'woo'     => (bool) $company->woo_connected_at,
+                ],
+            ] : null,
 
-            return ShopifyConnection::where('tenant_id', Auth::user()->tenant_id)
-                ->where('is_active', true)
-                ->first();
-        },
-
-    ]);
+            'flash' => [
+                'success' => fn () => $request->session()->get('success'),
+                'error'   => fn () => $request->session()->get('error'),
+                'info'    => fn () => $request->session()->get('info'),
+            ],
+        ]);
     }
 }

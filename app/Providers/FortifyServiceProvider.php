@@ -14,66 +14,29 @@ use Illuminate\Support\Str;
 use Laravel\Fortify\Actions\RedirectIfTwoFactorAuthenticatable;
 use Laravel\Fortify\Fortify;
 
-use App\Models\User;
-use Illuminate\Support\Facades\Hash;
-
 class FortifyServiceProvider extends ServiceProvider
 {
+    /**
+     * Register any application services.
+     */
     public function register(): void
     {
         //
     }
 
+    /**
+     * Bootstrap any application services.
+     */
     public function boot(): void
     {
-        /*
-        |--------------------------------------------------------------------------
-        | Fortify Actions
-        |--------------------------------------------------------------------------
-        */
         Fortify::createUsersUsing(CreateNewUser::class);
         Fortify::updateUserProfileInformationUsing(UpdateUserProfileInformation::class);
         Fortify::updateUserPasswordsUsing(UpdateUserPassword::class);
         Fortify::resetUserPasswordsUsing(ResetUserPassword::class);
         Fortify::redirectUserForTwoFactorAuthenticationUsing(RedirectIfTwoFactorAuthenticatable::class);
 
-        /*
-        |--------------------------------------------------------------------------
-        | BRAND AUTH ONLY (Default /login)
-        |--------------------------------------------------------------------------
-        */
-        Fortify::authenticateUsing(function ($request) {
-
-            $user = User::where('email', $request->email)->first();
-
-            if ($user &&
-                $user->role === 'brand' &&
-                Hash::check($request->password, $user->password)
-            ) {
-                return $user;
-            }
-
-            return null;
-        });
-
-        /*
-        |--------------------------------------------------------------------------
-        | Redirect After Login (Laravel 12 way)
-        |--------------------------------------------------------------------------
-        */
-        Fortify::redirects('login', function () {
-            return '/brand/dashboard';
-        });
-
-        /*
-        |--------------------------------------------------------------------------
-        | Rate Limiting
-        |--------------------------------------------------------------------------
-        */
         RateLimiter::for('login', function (Request $request) {
-            $throttleKey = Str::transliterate(
-                Str::lower($request->input(Fortify::username())) . '|' . $request->ip()
-            );
+            $throttleKey = Str::transliterate(Str::lower($request->input(Fortify::username())).'|'.$request->ip());
 
             return Limit::perMinute(5)->by($throttleKey);
         });

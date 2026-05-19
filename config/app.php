@@ -123,4 +123,8 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    // Pulsara route prefixes
+    'tenant_prefix' => env('TENANT_ROUTE_PREFIX', 'app'),
+    'admin_prefix'  => env('ADMIN_ROUTE_PREFIX', 'admin'),
+
 ];

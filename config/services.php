@@ -34,16 +34,17 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
+
     'shopify' => [
+        'key'         => env('SHOPIFY_API_KEY'),
+        'secret'      => env('SHOPIFY_API_SECRET'),
+        'scopes'      => env('SHOPIFY_SCOPES', 'read_orders,read_products,read_customers,read_inventory,write_orders'),
+        'api_version' => env('SHOPIFY_API_VERSION', '2025-01'),
+    ],
 
-        'client_id' => env('SHOPIFY_CLIENT_ID'),
-
-        'client_secret' => env('SHOPIFY_CLIENT_SECRET'),
-
-        'redirect' => env('SHOPIFY_REDIRECT_URI'),
-
-        'scopes' => env('SHOPIFY_SCOPES')
-
+    'woo' => [
+        'app_name' => env('WOO_APP_NAME', 'Pulsara D2C Ops'),
+        'scope'    => env('WOO_SCOPE', 'read_write'),
     ],
 
 ];

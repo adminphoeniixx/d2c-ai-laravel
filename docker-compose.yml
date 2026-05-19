@@ -1,0 +1,61 @@
+services:
+  app:
+    image: php:8.4-cli
+    container_name: pulsara_app
+    working_dir: /var/www
+    volumes:
+      - ./:/var/www
+    ports:
+      - "8000:8000"
+    command: >
+      bash -c "
+        apt-get update -qq &&
+        apt-get install -y -qq git unzip libzip-dev libpq-dev libonig-dev curl &&
+        docker-php-ext-install zip pdo_pgsql pgsql mbstring bcmath >/dev/null 2>&1 &&
+        curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer >/dev/null &&
+        composer install --no-interaction --prefer-dist &&
+        php artisan key:generate --force &&
+        php artisan migrate --force &&
+        php artisan serve --host=0.0.0.0 --port=8000
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - pulsara
+
+  postgres:
+    image: postgres:16
+    container_name: pulsara_postgres
+    environment:
+      POSTGRES_DB: pulsara
+      POSTGRES_USER: pulsara
+      POSTGRES_PASSWORD: secret
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulsara -d pulsara"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+    networks:
+      - pulsara
+
+  node:
+    image: node:20-alpine
+    container_name: pulsara_node
+    working_dir: /var/www
+    volumes:
+      - ./:/var/www
+    ports:
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    networks:
+      - pulsara
+
+networks:
+  pulsara:
+    driver: bridge
+
+volumes:
+  postgres_data:
