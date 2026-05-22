@@ -51,6 +51,7 @@ class HandleInertiaRequests extends Middleware
                 'plan'   => $company->plan,
                 'gstin'  => $company->gstin,
                 'business_category' => $company->business_category,
+                'letterhead_url' => $company->letterhead_url ?? null,
                 'integrations' => [
                     'shopify' => (bool) $company->shopify_connected_at,
                     'woo'     => (bool) $company->woo_connected_at,

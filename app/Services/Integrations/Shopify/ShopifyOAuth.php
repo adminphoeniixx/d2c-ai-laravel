@@ -43,10 +43,13 @@ class ShopifyOAuth
             'scope'        => $this->scopes,
             'redirect_uri' => $redirectUri,
             'state'        => $state,
-            'grant_options[]' => '',
+            'grant_options[]' => 'per-user',
         ]);
 
-        return "https://{$shop}/admin/oauth/authorize?{$params}";
+        // Use offline access with token rotation
+        $params = str_replace('grant_options%5B%5D=per-user', 'grant_options%5B%5D=', $params);
+
+        return "https://{$shop}/admin/oauth/authorize?{$params}&access_mode=offline";
     }
 
     public function exchangeCode(string $shop, string $code): array

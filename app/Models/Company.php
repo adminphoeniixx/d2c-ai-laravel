@@ -36,6 +36,10 @@ class Company extends BaseTenant implements TenantWithDatabase
             'gstin', 'registered_state_code', 'business_category', 'default_gst_rate',
             'country', 'currency', 'timezone', 'settings',
             'shopify_connected_at', 'woo_connected_at',
+            'letterhead_url',
+            'pf_enabled', 'pf_employee_rate', 'pf_employer_rate', 'pf_basic_cap',
+            'esi_enabled', 'esi_employee_rate', 'esi_employer_rate', 'esi_gross_threshold',
+            'pt_amount', 'pf_establishment_code', 'esi_establishment_code',
             'suspended_at', 'trial_ends_at',
         ];
     }
@@ -45,6 +49,15 @@ class Company extends BaseTenant implements TenantWithDatabase
         return [
             'settings'             => 'array',
             'default_gst_rate'     => 'float',
+            'pf_enabled'           => 'boolean',
+            'pf_employee_rate'     => 'float',
+            'pf_employer_rate'     => 'float',
+            'pf_basic_cap'         => 'float',
+            'esi_enabled'          => 'boolean',
+            'esi_employee_rate'    => 'float',
+            'esi_employer_rate'    => 'float',
+            'esi_gross_threshold'  => 'float',
+            'pt_amount'            => 'float',
             'shopify_connected_at' => 'immutable_datetime',
             'woo_connected_at'     => 'immutable_datetime',
             'suspended_at'         => 'immutable_datetime',

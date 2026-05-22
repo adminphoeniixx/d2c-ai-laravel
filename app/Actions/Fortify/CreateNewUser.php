@@ -31,27 +31,5 @@ class CreateNewUser implements CreatesNewUsers
             'email' => $input['email'],
             'password' => Hash::make($input['password']),
         ]);
-<<<<<<< Updated upstream
-
-        /*
-        |--------------------------------------------------------------------------
-        | 4. (Optional but recommended) Initialize Mongo DB
-        |--------------------------------------------------------------------------
-        */
-        config([
-            'database.connections.mongodb.database' => $databaseName
-        ]);
-
-        // create first collection (Mongo creates DB automatically)
-        \DB::connection('mongodb')
-            ->table('shopify_orders')
-            ->insert([
-                'init' => true,
-                'created_at' => now(),
-            ]);
-
-        return $user;
-=======
->>>>>>> Stashed changes
     }
 }

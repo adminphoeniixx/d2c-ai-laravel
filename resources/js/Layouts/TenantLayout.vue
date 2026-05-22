@@ -4,7 +4,8 @@ import { computed, onMounted, ref } from 'vue';
 import {
     LayoutDashboard, FileText, Receipt, ShoppingBag, Megaphone, IndianRupee,
     PackageSearch, Wallet, TrendingUp, Bot, ChevronDown, LogOut, User as UserIcon,
-    Menu, X, RefreshCw, Plug, Settings as SettingsIcon,
+    Menu, X, RefreshCw, Plug, Settings as SettingsIcon, Users, FileSignature, ClipboardList,
+    Clock, Truck, Building2, Boxes, HardHat,
 } from 'lucide-vue-next';
 import LogoMark from '@/Components/LogoMark.vue';
 import FlashToasts from '@/Components/FlashToasts.vue';
@@ -23,23 +24,34 @@ const lastSynced = ref('2 min ago');
 
 const nav = computed(() => ([
     {
-        label: 'PHASE 1',
+        label: 'OVERVIEW',
         items: [
             { name: 'Dashboard',      icon: LayoutDashboard, href: route('tenant.dashboard',  { tenant: slug.value }), active: route().current('tenant.dashboard') },
             { name: 'P&L Report',     icon: FileText,        href: route('tenant.pnl',        { tenant: slug.value }), active: route().current('tenant.pnl') },
-            { name: 'Expenses',       icon: Receipt,         href: route('tenant.expenses',   { tenant: slug.value }), active: route().current('tenant.expenses') },
-            { name: 'Shopify Orders', icon: ShoppingBag,     href: route('tenant.orders',     { tenant: slug.value }), active: route().current('tenant.orders') },
+            { name: 'Expenses',       icon: Receipt,         href: route('tenant.expenses',   { tenant: slug.value }), active: route().current('tenant.expenses*') },
+            { name: 'Shopify Orders', icon: ShoppingBag,     href: route('tenant.orders',     { tenant: slug.value }), active: route().current('tenant.orders*') },
             { name: 'Ad Analytics',   icon: Megaphone,       href: route('tenant.ads',        { tenant: slug.value }), active: route().current('tenant.ads') },
-            ...(co.value?.gstin ? [{ name: 'GST Reports', icon: IndianRupee, href: route('tenant.gst', { tenant: slug.value }), active: route().current('tenant.gst') }] : []),
+            ...(co.value?.gstin ? [{ name: 'GST Reports', icon: IndianRupee, href: route('tenant.gst', { tenant: slug.value }), active: route().current('tenant.gst*') }] : []),
         ],
     },
     {
-        label: 'PHASE 2',
+        label: 'HR',
+        items: [
+            { name: 'Employees',        icon: Users,          href: route('tenant.hr.employees',       { tenant: slug.value }), active: route().current('tenant.hr.employees*') },
+            { name: 'Attendance',       icon: Clock,          href: route('tenant.hr.attendance',      { tenant: slug.value }), active: route().current('tenant.hr.attendance*') },
+            { name: 'Letter Templates', icon: ClipboardList,  href: route('tenant.hr.templates',       { tenant: slug.value }), active: route().current('tenant.hr.templates*') },
+            { name: 'Create Letter',    icon: FileSignature,  href: route('tenant.hr.letters.create',  { tenant: slug.value }), active: route().current('tenant.hr.letters*') },
+        ],
+    },
+    {
+        label: 'OPERATIONS',
         badge: 'NEW',
         items: [
-            { name: 'Inventory Forecast',   icon: PackageSearch, href: route('tenant.inventory', { tenant: slug.value }), active: route().current('tenant.inventory') },
-            { name: 'Payroll Intelligence', icon: Wallet,        href: route('tenant.payroll',   { tenant: slug.value }), active: route().current('tenant.payroll') },
-            { name: 'Cash Flow',            icon: TrendingUp,    href: route('tenant.cashflow',  { tenant: slug.value }), active: route().current('tenant.cashflow') },
+            { name: 'Payroll',          icon: Wallet,         href: route('tenant.payroll.index',          { tenant: slug.value }), active: route().current('tenant.payroll*') },
+            { name: 'Inventory',        icon: Boxes,          href: route('tenant.inventory-mgmt.index',   { tenant: slug.value }), active: route().current('tenant.inventory-mgmt*') },
+            { name: 'Purchase Orders',  icon: Truck,          href: route('tenant.purchase-orders.index',  { tenant: slug.value }), active: route().current('tenant.purchase-orders*') },
+            { name: 'Vendors',          icon: Building2,      href: route('tenant.vendors.index',          { tenant: slug.value }), active: route().current('tenant.vendors*') },
+            { name: 'Cash Flow',        icon: TrendingUp,     href: route('tenant.cashflow',               { tenant: slug.value }), active: route().current('tenant.cashflow') },
         ],
     },
     {
@@ -56,11 +68,15 @@ const nav = computed(() => ([
     },
 ]));
 
-const integrations = computed(() => ([
-    { name: 'Shopify',    connected: co.value?.integrations?.shopify, href: route('tenant.integrations.shopify.show', { tenant: slug.value }) },
-    { name: 'Meta Ads',   connected: false, href: '#' },
-    { name: 'Google Ads', connected: false, href: '#' },
-]));
+const integrations = computed(() => {
+    const metaAccount = null; // loaded via props if needed
+    const googleAccount = null;
+    return [
+        { name: 'Shopify',     connected: co.value?.integrations?.shopify, href: route('tenant.integrations.shopify.show', { tenant: slug.value }) },
+        { name: 'Meta Ads',    connected: co.value?.integrations?.meta_ads, href: route('tenant.integrations.meta.show', { tenant: slug.value }) },
+        { name: 'Google Ads',  connected: co.value?.integrations?.google_ads, href: route('tenant.integrations.google-ads.show', { tenant: slug.value }) },
+    ];
+});
 
 function syncNow() {
     syncing.value = true;

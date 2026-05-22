@@ -47,4 +47,23 @@ return [
         'scope'    => env('WOO_SCOPE', 'read_write'),
     ],
 
+    'bunny' => [
+        'storage_zone' => env('BUNNY_STORAGE_ZONE'),
+        'api_key'      => env('BUNNY_API_KEY'),
+        'cdn_url'      => env('BUNNY_CDN_URL'),
+        'region'       => env('BUNNY_REGION', ''),  // sg, ny, la, syd, br, jh, se — empty for Falkenstein
+    ],
+
+    'meta' => [
+        'app_id'     => env('META_APP_ID'),
+        'app_secret' => env('META_APP_SECRET'),
+        'scopes'     => env('META_SCOPES', 'ads_read,ads_management,read_insights'),
+    ],
+
+    'google_ads' => [
+        'client_id'       => env('GOOGLE_ADS_CLIENT_ID'),
+        'client_secret'   => env('GOOGLE_ADS_CLIENT_SECRET'),
+        'developer_token' => env('GOOGLE_ADS_DEVELOPER_TOKEN'),
+    ],
+
 ];

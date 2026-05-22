@@ -32,6 +32,8 @@ class IntegrationAccount extends Model
 
     public const PROVIDER_SHOPIFY = 'shopify';
     public const PROVIDER_WOO     = 'woocommerce';
+    public const PROVIDER_META    = 'meta_ads';
+    public const PROVIDER_GOOGLE  = 'google_ads';
 
     public const MODE_OAUTH  = 'oauth';
     public const MODE_MANUAL = 'manual';

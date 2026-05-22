@@ -27,13 +27,63 @@ class ShopifyClient
             ])
             ->timeout(30)
             ->retry(3, 1000, function ($exception, $request) {
-                // Respect Shopify's 429 with Retry-After semantics
-                return true;
+                // On 403, try to refresh the token
+                if ($exception instanceof \Illuminate\Http\Client\RequestException && $exception->response->status() === 403) {
+                    if ($this->refreshToken()) {
+                        $request->withHeaders([
+                            'X-Shopify-Access-Token' => $this->account->getCredential('access_token'),
+                        ]);
+                        return true;
+                    }
+                }
+                return $exception instanceof \Illuminate\Http\Client\RequestException
+                    && $exception->response->status() === 429;
             }, throw: false);
     }
 
     /**
-     * Fetch orders with cursor pagination. Yields pages until no `next` link.
+     * Refresh the OAuth token using the refresh_token.
+     */
+    protected function refreshToken(): bool
+    {
+        $refreshToken = $this->account->getCredential('refresh_token');
+        if (!$refreshToken) {
+            return false;
+        }
+
+        try {
+            $response = Http::asJson()
+                ->acceptJson()
+                ->timeout(15)
+                ->post("https://{$this->account->shop_domain}/admin/oauth/access_token", [
+                    'client_id'     => config('services.shopify.key'),
+                    'client_secret' => config('services.shopify.secret'),
+                    'grant_type'    => 'refresh_token',
+                    'refresh_token' => $refreshToken,
+                ])
+                ->throw();
+
+            $data = $response->json();
+
+            // Update stored credentials
+            $credentials = $this->account->credentials;
+            $credentials['access_token'] = $data['access_token'];
+            if (!empty($data['refresh_token'])) {
+                $credentials['refresh_token'] = $data['refresh_token'];
+            }
+            $credentials['expires_in'] = $data['expires_in'] ?? null;
+
+            $this->account->update(['credentials' => $credentials, 'status' => IntegrationAccount::STATUS_CONNECTED]);
+            $this->account->refresh();
+
+            return true;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Fetch orders with cursor pagination. Yields individual orders.
      *
      * @return \Generator<int,array>
      */
@@ -53,8 +103,12 @@ class ShopifyClient
                 : $params;
 
             $response = $this->request()->get('orders.json', $params)->throw();
-            $body = $response->json('orders', []);
-            yield $body;
+            $orders = $response->json('orders', []);
+
+            // Yield each order individually
+            foreach ($orders as $order) {
+                yield $order;
+            }
 
             // Parse Link header for page_info
             $link = $response->header('Link') ?? '';

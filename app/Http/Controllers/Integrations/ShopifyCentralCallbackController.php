@@ -54,7 +54,12 @@ class ShopifyCentralCallbackController extends Controller
                     'mode'          => IntegrationAccount::MODE_OAUTH,
                     'status'        => IntegrationAccount::STATUS_CONNECTED,
                     'shop_domain'   => $data['shop'],
-                    'credentials'   => ['access_token' => $token['access_token']],
+                    'credentials'   => array_filter([
+                        'access_token'  => $token['access_token'],
+                        'refresh_token' => $token['refresh_token'] ?? null,
+                        'expires_in'    => $token['expires_in'] ?? null,
+                        'token_type'    => $token['token_type'] ?? null,
+                    ]),
                     'scopes'        => explode(',', $token['scope'] ?? ''),
                     'connected_at'  => now(),
                     'error_message' => null,

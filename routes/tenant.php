@@ -42,11 +42,89 @@ Route::middleware(['auth', 'verified', 'tenant'])->group(function () {
     /* ── Company Settings ───────────────────────────── */
     Route::get('/settings',      [\App\Http\Controllers\Tenant\CompanySettingsController::class, 'index'])->name('settings');
     Route::put('/settings',      [\App\Http\Controllers\Tenant\CompanySettingsController::class, 'update'])->name('settings.update');
+    Route::post('/settings/letterhead', [\App\Http\Controllers\Tenant\CompanySettingsController::class, 'uploadLetterhead'])->name('settings.letterhead.upload');
+    Route::delete('/settings/letterhead', [\App\Http\Controllers\Tenant\CompanySettingsController::class, 'removeLetterhead'])->name('settings.letterhead.remove');
 
-    /* ── Phase 2 ─────────────────────────────────── */
-    Route::get('/inventory',     [InventoryForecastController::class, 'index'])->name('inventory');
-    Route::get('/payroll',       [PayrollIntelligenceController::class, 'index'])->name('payroll');
+    /* ── Phase 2 (redirects for legacy sidebar links) ── */
+    Route::get('/inventory',     fn () => redirect()->route('tenant.inventory-mgmt.index', ['tenant' => request()->route('tenant')]))->name('inventory');
     Route::get('/cashflow',      [CashFlowController::class, 'index'])->name('cashflow');
+
+    /* ── HR Module ─────────────────────────────── */
+    Route::prefix('hr')->name('hr.')->group(function () {
+        // Employees
+        Route::get('/employees',            [\App\Http\Controllers\Tenant\EmployeeController::class, 'index'])->name('employees');
+        Route::get('/employees/create',     [\App\Http\Controllers\Tenant\EmployeeController::class, 'create'])->name('employees.create');
+        Route::post('/employees',           [\App\Http\Controllers\Tenant\EmployeeController::class, 'store'])->name('employees.store');
+        Route::get('/employees/{id}',       [\App\Http\Controllers\Tenant\EmployeeController::class, 'show'])->name('employees.show');
+        Route::get('/employees/{id}/edit',  [\App\Http\Controllers\Tenant\EmployeeController::class, 'edit'])->name('employees.edit');
+        Route::put('/employees/{id}',       [\App\Http\Controllers\Tenant\EmployeeController::class, 'update'])->name('employees.update');
+
+        // Letter Templates
+        Route::get('/templates',            [\App\Http\Controllers\Tenant\LetterController::class, 'templates'])->name('templates');
+        Route::post('/templates',           [\App\Http\Controllers\Tenant\LetterController::class, 'storeTemplate'])->name('templates.store');
+        Route::put('/templates/{id}',       [\App\Http\Controllers\Tenant\LetterController::class, 'updateTemplate'])->name('templates.update');
+        Route::delete('/templates/{id}',    [\App\Http\Controllers\Tenant\LetterController::class, 'destroyTemplate'])->name('templates.destroy');
+
+        // Letters
+        Route::get('/letters/create',       [\App\Http\Controllers\Tenant\LetterController::class, 'create'])->name('letters.create');
+        Route::post('/letters',             [\App\Http\Controllers\Tenant\LetterController::class, 'store'])->name('letters.store');
+        Route::get('/letters/{id}',         [\App\Http\Controllers\Tenant\LetterController::class, 'show'])->name('letters.show');
+        Route::put('/letters/{id}',         [\App\Http\Controllers\Tenant\LetterController::class, 'update'])->name('letters.update');
+        Route::delete('/letters/{id}',      [\App\Http\Controllers\Tenant\LetterController::class, 'destroy'])->name('letters.destroy');
+
+        // Attendance & Working Hours
+        Route::get('/attendance',           [\App\Http\Controllers\Tenant\AttendanceController::class, 'index'])->name('attendance');
+        Route::post('/attendance',          [\App\Http\Controllers\Tenant\AttendanceController::class, 'store'])->name('attendance.store');
+        Route::post('/attendance/bulk',     [\App\Http\Controllers\Tenant\AttendanceController::class, 'bulkStore'])->name('attendance.bulk');
+
+        // Employee Documents
+        Route::post('/documents',           [\App\Http\Controllers\Tenant\EmployeeDocumentController::class, 'store'])->name('documents.store');
+        Route::delete('/documents/{id}',    [\App\Http\Controllers\Tenant\EmployeeDocumentController::class, 'destroy'])->name('documents.destroy');
+
+        // Workers (श्रमिक)
+        Route::get('/workers',              [\App\Http\Controllers\Tenant\WorkerController::class, 'index'])->name('workers');
+        Route::get('/workers/create',       [\App\Http\Controllers\Tenant\WorkerController::class, 'create'])->name('workers.create');
+        Route::post('/workers',             [\App\Http\Controllers\Tenant\WorkerController::class, 'store'])->name('workers.store');
+        Route::get('/workers/{worker}',     [\App\Http\Controllers\Tenant\WorkerController::class, 'show'])->name('workers.show');
+        Route::get('/workers/{worker}/edit',[\App\Http\Controllers\Tenant\WorkerController::class, 'edit'])->name('workers.edit');
+        Route::put('/workers/{worker}',     [\App\Http\Controllers\Tenant\WorkerController::class, 'update'])->name('workers.update');
+        Route::delete('/workers/{worker}',  [\App\Http\Controllers\Tenant\WorkerController::class, 'destroy'])->name('workers.destroy');
+    });
+
+    /* ── Payroll ───────────────────────────────── */
+    Route::prefix('payroll')->name('payroll.')->group(function () {
+        Route::get('/',            [\App\Http\Controllers\Tenant\PayrollController::class, 'index'])->name('index');
+        Route::get('/create',      [\App\Http\Controllers\Tenant\PayrollController::class, 'create'])->name('create');
+        Route::post('/',           [\App\Http\Controllers\Tenant\PayrollController::class, 'store'])->name('store');
+        Route::get('/{id}',        [\App\Http\Controllers\Tenant\PayrollController::class, 'show'])->name('show');
+        Route::post('/{id}/paid',  [\App\Http\Controllers\Tenant\PayrollController::class, 'markPaid'])->name('paid');
+    });
+
+    /* ── Purchase Orders ───────────────────────── */
+    Route::prefix('purchase-orders')->name('purchase-orders.')->group(function () {
+        Route::get('/',            [\App\Http\Controllers\Tenant\PurchaseOrderController::class, 'index'])->name('index');
+        Route::get('/create',      [\App\Http\Controllers\Tenant\PurchaseOrderController::class, 'create'])->name('create');
+        Route::post('/',           [\App\Http\Controllers\Tenant\PurchaseOrderController::class, 'store'])->name('store');
+        Route::get('/{id}',        [\App\Http\Controllers\Tenant\PurchaseOrderController::class, 'show'])->name('show');
+        Route::put('/{id}/status', [\App\Http\Controllers\Tenant\PurchaseOrderController::class, 'updateStatus'])->name('status');
+    });
+
+    /* ── Vendors ───────────────────────────────── */
+    Route::prefix('vendors')->name('vendors.')->group(function () {
+        Route::get('/',            [\App\Http\Controllers\Tenant\VendorController::class, 'index'])->name('index');
+        Route::post('/',           [\App\Http\Controllers\Tenant\VendorController::class, 'store'])->name('store');
+        Route::put('/{id}',        [\App\Http\Controllers\Tenant\VendorController::class, 'update'])->name('update');
+        Route::delete('/{id}',     [\App\Http\Controllers\Tenant\VendorController::class, 'destroy'])->name('destroy');
+    });
+
+    /* ── Inventory ─────────────────────────────── */
+    Route::prefix('inventory-mgmt')->name('inventory-mgmt.')->group(function () {
+        Route::get('/',                [\App\Http\Controllers\Tenant\InventoryController::class, 'index'])->name('index');
+        Route::post('/',               [\App\Http\Controllers\Tenant\InventoryController::class, 'store'])->name('store');
+        Route::get('/{id}',            [\App\Http\Controllers\Tenant\InventoryController::class, 'show'])->name('show');
+        Route::put('/{id}',            [\App\Http\Controllers\Tenant\InventoryController::class, 'update'])->name('update');
+        Route::post('/{id}/adjust',    [\App\Http\Controllers\Tenant\InventoryController::class, 'adjustStock'])->name('adjust');
+    });
 
     /* ── AI ──────────────────────────────────────── */
     Route::get('/ai',            [AiCopilotController::class, 'index'])->name('ai');
@@ -67,5 +145,21 @@ Route::middleware(['auth', 'verified', 'tenant'])->group(function () {
         Route::get('/woo/callback',         [WooCommerceController::class, 'callback'])->name('woo.callback');
         Route::post('/woo/manual',          [WooCommerceController::class, 'manual'])->name('woo.manual');
         Route::delete('/woo',               [WooCommerceController::class, 'disconnect'])->name('woo.disconnect');
+
+        // Meta Ads
+        Route::get('/meta',                 [\App\Http\Controllers\Tenant\Integrations\MetaAdsController::class, 'show'])->name('meta.show');
+        Route::post('/meta/connect',        [\App\Http\Controllers\Tenant\Integrations\MetaAdsController::class, 'connect'])->name('meta.connect');
+        Route::get('/meta/callback',        [\App\Http\Controllers\Tenant\Integrations\MetaAdsController::class, 'callback'])->name('meta.callback');
+        Route::post('/meta/manual',         [\App\Http\Controllers\Tenant\Integrations\MetaAdsController::class, 'manual'])->name('meta.manual');
+        Route::post('/meta/sync',           [\App\Http\Controllers\Tenant\Integrations\MetaAdsController::class, 'sync'])->name('meta.sync');
+        Route::delete('/meta',              [\App\Http\Controllers\Tenant\Integrations\MetaAdsController::class, 'disconnect'])->name('meta.disconnect');
+
+        // Google Ads
+        Route::get('/google-ads',           [\App\Http\Controllers\Tenant\Integrations\GoogleAdsController::class, 'show'])->name('google-ads.show');
+        Route::post('/google-ads/connect',  [\App\Http\Controllers\Tenant\Integrations\GoogleAdsController::class, 'connect'])->name('google-ads.connect');
+        Route::get('/google-ads/callback',  [\App\Http\Controllers\Tenant\Integrations\GoogleAdsController::class, 'callback'])->name('google-ads.callback');
+        Route::post('/google-ads/manual',   [\App\Http\Controllers\Tenant\Integrations\GoogleAdsController::class, 'manual'])->name('google-ads.manual');
+        Route::post('/google-ads/sync',     [\App\Http\Controllers\Tenant\Integrations\GoogleAdsController::class, 'sync'])->name('google-ads.sync');
+        Route::delete('/google-ads',        [\App\Http\Controllers\Tenant\Integrations\GoogleAdsController::class, 'disconnect'])->name('google-ads.disconnect');
     });
 });

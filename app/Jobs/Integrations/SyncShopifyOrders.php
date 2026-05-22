@@ -62,18 +62,19 @@ class SyncShopifyOrders implements ShouldQueue
         $failed = 0;
 
         try {
-            foreach ($client->orders($query) as $page) {
-                foreach ($page as $payload) {
-                    try {
-                        $this->upsertOrder($payload);
-                        $total++;
-                    } catch (\Throwable $e) {
-                        $failed++;
-                        Log::warning('Shopify order upsert failed', [
-                            'order_id' => $payload['id'] ?? null,
-                            'error'    => $e->getMessage(),
-                        ]);
-                    }
+            foreach ($client->orders($query) as $order) {
+                try {
+                    $this->upsertOrder($order);
+                    $total++;
+                } catch (\Throwable $e) {
+                    $failed++;
+                    Log::error('Shopify order upsert failed', [
+                        'order_id'   => $order['id'] ?? null,
+                        'order_name' => $order['name'] ?? null,
+                        'error'      => $e->getMessage(),
+                        'file'       => $e->getFile() . ':' . $e->getLine(),
+                        'trace'      => array_slice(explode("\n", $e->getTraceAsString()), 0, 5),
+                    ]);
                 }
             }
 
@@ -104,37 +105,68 @@ class SyncShopifyOrders implements ShouldQueue
     {
         $company = tenancy()->tenant;
 
-        // Calculate GST split if company has GSTIN configured
-        $gstData = null;
-        if ($company->registered_state_code) {
-            $gstData = GSTCalculator::calculateForShopifyOrder(
-                order: $o,
-                sellerStateCode: $company->registered_state_code,
-                businessCategory: $company->business_category ?? 'other',
-                defaultGstRate: $company->default_gst_rate,
-            );
+        // Use presentment_money (customer's currency, INR) when available, fallback to shop_money
+        $presentment = function ($set, string $default = '0'): float {
+            if (!is_array($set)) return (float) $default;
+            return (float) ($set['presentment_money']['amount'] ?? $set['shop_money']['amount'] ?? $default);
+        };
+
+        $currency = $o['presentment_currency'] ?? $o['currency'] ?? 'INR';
+        $subtotal = $presentment($o['subtotal_price_set'] ?? null, $o['subtotal_price'] ?? '0');
+        $totalTax = $presentment($o['total_tax_set'] ?? null, $o['total_tax'] ?? '0');
+        $totalDiscount = $presentment($o['total_discounts_set'] ?? null, $o['total_discounts'] ?? '0');
+        $totalShipping = $presentment($o['total_shipping_price_set'] ?? null, '0');
+        $totalAmount = $presentment($o['total_price_set'] ?? null, $o['total_price'] ?? '0');
+
+        // Override line item prices with presentment_money for correct INR threshold check
+        $gstOrder = $o;
+        foreach (($gstOrder['line_items'] ?? []) as $idx => $li) {
+            $gstOrder['line_items'][$idx]['price'] = (string) ($li['price_set']['presentment_money']['amount'] ?? $li['price'] ?? '0');
         }
 
-        // Determine buyer state from shipping address
+        // Calculate GST split if company has GSTIN configured
+        $gstData = null;
+        if ($company && $company->registered_state_code) {
+            try {
+                $gstData = GSTCalculator::calculateForShopifyOrder(
+                    order: $gstOrder,
+                    sellerStateCode: $company->registered_state_code,
+                    businessCategory: $company->business_category ?? 'other',
+                    defaultGstRate: $company->default_gst_rate,
+                );
+            } catch (\Throwable $e) {
+                Log::warning('GST calculation failed', ['order' => $o['name'] ?? '?', 'error' => $e->getMessage()]);
+            }
+        }
+
+        // Determine buyer state from shipping address (may be null)
         $buyerStateCode = null;
-        $shippingProvince = $o['shipping_address']['province_code'] ?? null;
-        if ($shippingProvince) {
-            $buyerStateCode = StateCodeMap::shopifyProvinceToStateCode($shippingProvince);
+        $shippingAddress = is_array($o['shipping_address'] ?? null) ? $o['shipping_address'] : null;
+        $billingAddress = is_array($o['billing_address'] ?? null) ? $o['billing_address'] : null;
+
+        if ($shippingAddress && !empty($shippingAddress['province_code'])) {
+            $buyerStateCode = StateCodeMap::shopifyProvinceToStateCode($shippingAddress['province_code']);
+        }
+
+        // Customer name — handle missing customer object
+        $customerName = '';
+        if (is_array($o['customer'] ?? null)) {
+            $customerName = trim(($o['customer']['first_name'] ?? '') . ' ' . ($o['customer']['last_name'] ?? ''));
         }
 
         $order = Order::updateOrCreate(
             ['provider' => 'shopify', 'external_id' => (string) $o['id']],
             [
-                'order_number'       => $o['name'] ?? '#'.$o['order_number'],
+                'order_number'       => $o['name'] ?? '#' . ($o['order_number'] ?? ''),
                 'status'             => $o['financial_status'] ?? 'pending',
                 'financial_status'   => $o['financial_status'] ?? null,
                 'fulfillment_status' => $o['fulfillment_status'] ?? null,
-                'currency'           => $o['currency'] ?? 'INR',
-                'subtotal'           => (float) ($o['subtotal_price'] ?? 0),
-                'total_tax'          => (float) ($o['total_tax'] ?? 0),
-                'total_discount'     => (float) ($o['total_discounts'] ?? 0),
-                'total_shipping'     => (float) ($o['total_shipping_price_set']['shop_money']['amount'] ?? 0),
-                'total_amount'       => (float) ($o['total_price'] ?? 0),
+                'currency'           => $currency,
+                'subtotal'           => $subtotal,
+                'total_tax'          => $totalTax,
+                'total_discount'     => $totalDiscount,
+                'total_shipping'     => $totalShipping,
+                'total_amount'       => $totalAmount,
                 // GST fields
                 'taxable_amount'     => $gstData['taxable_amount'] ?? 0,
                 'cgst_amount'        => $gstData['cgst_amount'] ?? 0,
@@ -146,10 +178,10 @@ class SyncShopifyOrders implements ShouldQueue
                 'buyer_state_code'   => $buyerStateCode,
                 // Customer fields
                 'customer_email'     => $o['email'] ?? null,
-                'customer_name'      => trim(($o['customer']['first_name'] ?? '').' '.($o['customer']['last_name'] ?? '')),
+                'customer_name'      => $customerName,
                 'customer_phone'     => $o['phone'] ?? ($o['customer']['phone'] ?? null),
-                'shipping_address'   => $o['shipping_address'] ?? null,
-                'billing_address'    => $o['billing_address'] ?? null,
+                'shipping_address'   => $shippingAddress,
+                'billing_address'    => $billingAddress,
                 'line_item_count'    => count($o['line_items'] ?? []),
                 'tags'               => array_filter(array_map('trim', explode(',', (string) ($o['tags'] ?? '')))),
                 'raw_payload'        => $o,
@@ -163,6 +195,8 @@ class SyncShopifyOrders implements ShouldQueue
 
         foreach (($o['line_items'] ?? []) as $idx => $li) {
             $itemGst = $gstLineItems[$idx] ?? null;
+            $unitPrice = (float) ($li['price_set']['presentment_money']['amount'] ?? $li['price'] ?? 0);
+            $qty = (int) ($li['quantity'] ?? 1);
 
             OrderItem::create([
                 'order_id'       => $order->id,
@@ -170,9 +204,9 @@ class SyncShopifyOrders implements ShouldQueue
                 'sku'            => $li['sku'] ?? null,
                 'product_name'   => $li['name'] ?? $li['title'] ?? 'Unknown',
                 'variant_name'   => $li['variant_title'] ?? null,
-                'quantity'       => (int) ($li['quantity'] ?? 1),
-                'unit_price'     => (float) ($li['price'] ?? 0),
-                'total_price'    => (float) ($li['price'] ?? 0) * (int) ($li['quantity'] ?? 1),
+                'quantity'       => $qty,
+                'unit_price'     => $unitPrice,
+                'total_price'    => $unitPrice * $qty,
                 'tax_amount'     => (float) ($li['total_tax'] ?? 0),
                 // GST fields per item
                 'gst_rate'       => $itemGst['gst_rate'] ?? null,

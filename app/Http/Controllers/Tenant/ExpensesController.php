@@ -18,15 +18,20 @@ class ExpensesController extends Controller
     {
         $expenses = Expense::query()
             ->when($request->filled('category'), fn ($q) => $q->where('category', $request->input('category')))
+            ->when($request->filled('source'), fn ($q) => $q->where('source', $request->input('source')))
             ->latest('occurred_at')->paginate(50)->withQueryString();
+
+        $monthQuery = Expense::whereMonth('occurred_at', now()->month)
+            ->whereYear('occurred_at', now()->year);
 
         return Inertia::render('Tenant/Expenses/Index', [
             'expenses' => $expenses,
-            'filters'  => $request->only(['category']),
+            'filters'  => $request->only(['category', 'source']),
             'totals'   => [
-                'this_month' => (float) Expense::whereMonth('occurred_at', now()->month)
-                                               ->whereYear('occurred_at', now()->year)
-                                               ->sum('amount'),
+                'this_month'   => (float) (clone $monthQuery)->sum('amount'),
+                'ads_month'    => (float) (clone $monthQuery)->where('category', 'ads')->sum('amount'),
+                'auto_synced'  => (float) (clone $monthQuery)->where('source', 'auto')->sum('amount'),
+                'manual_month' => (float) (clone $monthQuery)->where('source', 'manual')->sum('amount'),
             ],
         ]);
     }
