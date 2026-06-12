@@ -26,7 +26,7 @@ class HandleInertiaRequests extends Middleware
             'app' => [
                 'name'    => config('app.name'),
                 'env'     => app()->environment(),
-                'brand'   => 'Pulsara',
+                'brand'   => 'heyd2c',
                 'tagline' => 'D2C Ops AI',
             ],
 

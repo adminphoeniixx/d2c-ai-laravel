@@ -6,6 +6,10 @@ namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
 use App\Models\Tenant\Order;
+use App\Models\Tenant\OrderItem;
+use App\Services\GST\GSTCalculator;
+use App\Services\GST\StateCodeMap;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -13,6 +17,127 @@ use Inertia\Response;
 
 class GSTController extends Controller
 {
+    /**
+     * Recalculate GST on all existing orders using stored raw_payload.
+     * Called after GSTIN is added/changed.
+     */
+    public function recalculate(): RedirectResponse
+    {
+        $company = app('current_company');
+
+        if (empty($company->gstin) || empty($company->registered_state_code)) {
+            return back()->with('error', 'Set your GSTIN in Settings first.');
+        }
+
+        $sellerStateCode = $company->registered_state_code;
+        $businessCategory = $company->business_category ?? 'other';
+        $defaultGstRate = $company->default_gst_rate;
+
+        $orders = Order::whereNotNull('raw_payload')->get();
+
+        $updated = 0;
+
+        foreach ($orders as $order) {
+            try {
+                $rawPayload = is_string($order->raw_payload)
+                    ? json_decode($order->raw_payload, true)
+                    : $order->raw_payload;
+
+                if (empty($rawPayload)) continue;
+
+                // Determine buyer state
+                $buyerStateCode = null;
+                $shippingProvince = $rawPayload['shipping_address']['province_code'] ?? null;
+                if ($shippingProvince) {
+                    $buyerStateCode = StateCodeMap::shopifyProvinceToStateCode($shippingProvince);
+                }
+                if (!$buyerStateCode) {
+                    $billingProvince = $rawPayload['billing_address']['province_code'] ?? null;
+                    if ($billingProvince) {
+                        $buyerStateCode = StateCodeMap::shopifyProvinceToStateCode($billingProvince);
+                    }
+                }
+
+                // For WooCommerce orders, try state field
+                if (!$buyerStateCode) {
+                    $state = $rawPayload['shipping']['state'] ?? $rawPayload['billing']['state'] ?? null;
+                    if ($state) {
+                        $buyerStateCode = StateCodeMap::shopifyProvinceToStateCode($state);
+                    }
+                }
+
+                // Build line items for calculation
+                $lineItems = $rawPayload['line_items'] ?? [];
+                if (empty($lineItems)) {
+                    // Simple calculation from total amount
+                    $gst = GSTCalculator::calculate(
+                        taxableAmount: (float) $order->total_amount,
+                        gstRate: $defaultGstRate ?? 18,
+                        sellerStateCode: $sellerStateCode,
+                        buyerStateCode: $buyerStateCode,
+                        priceIncludesGst: true,
+                    );
+
+                    $order->update([
+                        'taxable_amount'  => $gst['taxable_amount'],
+                        'cgst_amount'     => $gst['cgst_amount'],
+                        'sgst_amount'     => $gst['sgst_amount'],
+                        'igst_amount'     => $gst['igst_amount'],
+                        'gst_rate'        => $gst['gst_rate'],
+                        'place_of_supply' => $gst['place_of_supply'],
+                        'is_intra_state'  => $gst['is_intra_state'],
+                        'buyer_state_code'=> $buyerStateCode,
+                    ]);
+                } else {
+                    // Fix line item prices for Shopify format
+                    foreach ($lineItems as $idx => $li) {
+                        $lineItems[$idx]['price'] = (string) ($li['price_set']['presentment_money']['amount'] ?? $li['price'] ?? '0');
+                    }
+                    $rawPayload['line_items'] = $lineItems;
+
+                    $gstData = GSTCalculator::calculateForShopifyOrder(
+                        order: $rawPayload,
+                        sellerStateCode: $sellerStateCode,
+                        businessCategory: $businessCategory,
+                        defaultGstRate: $defaultGstRate,
+                    );
+
+                    $order->update([
+                        'taxable_amount'  => $gstData['taxable_amount'],
+                        'cgst_amount'     => $gstData['cgst_amount'],
+                        'sgst_amount'     => $gstData['sgst_amount'],
+                        'igst_amount'     => $gstData['igst_amount'],
+                        'gst_rate'        => $gstData['line_items'][0]['gst_rate'] ?? $defaultGstRate,
+                        'place_of_supply' => $gstData['place_of_supply'],
+                        'is_intra_state'  => $gstData['is_intra_state'],
+                        'buyer_state_code'=> $gstData['buyer_state_code'],
+                    ]);
+
+                    // Update order items GST too — match by position
+                    $orderItems = OrderItem::where('order_id', $order->id)->orderBy('id')->get();
+                    foreach ($gstData['line_items'] as $idx => $gstItem) {
+                        $orderItem = $orderItems[$idx] ?? null;
+                        if ($orderItem) {
+                            $orderItem->update([
+                                'gst_rate'       => $gstItem['gst_rate'],
+                                'taxable_amount' => $gstItem['taxable_amount'],
+                                'cgst_amount'    => $gstItem['cgst_amount'],
+                                'sgst_amount'    => $gstItem['sgst_amount'],
+                                'igst_amount'    => $gstItem['igst_amount'],
+                            ]);
+                        }
+                    }
+                }
+
+                $updated++;
+            } catch (\Throwable $e) {
+                \Log::warning("GST recalc failed for order {$order->id}", ['error' => $e->getMessage()]);
+                continue;
+            }
+        }
+
+        return back()->with('success', "GST recalculated for {$updated} orders.");
+    }
     public function index(): Response
     {
         $company = app('current_company');

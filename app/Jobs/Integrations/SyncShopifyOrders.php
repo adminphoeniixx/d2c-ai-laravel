@@ -84,12 +84,16 @@ class SyncShopifyOrders implements ShouldQueue
                 'error_message'  => null,
             ]);
 
-            event(new IntegrationSyncCompleted(
-                companyId: $company->id,
-                provider: 'shopify',
-                orderCount: $total,
-                failed: $failed,
-            ));
+            try {
+                event(new IntegrationSyncCompleted(
+                    companyId: $company->id,
+                    provider: 'shopify',
+                    orderCount: $total,
+                    failed: $failed,
+                ));
+            } catch (\Throwable $logErr) {
+                // Don't let logging failure override connected status
+            }
         } catch (\Throwable $e) {
             $account->update([
                 'status'        => IntegrationAccount::STATUS_ERROR,

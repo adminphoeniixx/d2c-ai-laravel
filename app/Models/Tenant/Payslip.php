@@ -17,8 +17,10 @@ class Payslip extends Model
         'overtime_pay', 'bonus', 'gross_salary',
         'pf_employee', 'pf_employer', 'esi_employee', 'esi_employer',
         'professional_tax', 'tds', 'other_deductions', 'total_deductions',
+        'late_deductions', 'absent_deductions', 'lwp_deductions',
         'net_salary',
         'working_days', 'days_present', 'days_absent',
+        'late_count', 'half_days', 'leave_days',
         'total_overtime_hours', 'overtime_rate',
         'status',
     ];

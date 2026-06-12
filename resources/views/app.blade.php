@@ -6,7 +6,7 @@
         <meta name="theme-color" content="#0a0812">
         <meta name="csrf-token" content="{{ csrf_token() }}">
 
-        <title inertia>{{ config('app.name', 'Pulsara') }}</title>
+        <title inertia>{{ config('app.name', 'heyd2c') }}</title>
 
         <!-- Fonts -->
         <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,6 +17,7 @@
         @routes
         @vite(['resources/js/app.js', "resources/js/Pages/{$page['component']}.vue"])
         @inertiaHead
+        <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     </head>
     <body class="font-sans antialiased">
         @inertia

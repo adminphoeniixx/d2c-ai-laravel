@@ -35,6 +35,9 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
         ]);
+        $middleware->validateCsrfTokens(except: [
+        'shopify/webhooks/*',
+         ]);
 
         $middleware->alias([
             'tenant'     => InitializeTenancyByPath::class,

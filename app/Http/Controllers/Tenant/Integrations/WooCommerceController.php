@@ -56,7 +56,7 @@ class WooCommerceController extends Controller
         $return   = route('tenant.integrations.woo.show',    ['tenant' => $company->slug]);
 
         $params = http_build_query([
-            'app_name'     => (string) config('services.woo.app_name', 'Pulsara D2C Ops'),
+            'app_name'     => (string) config('services.woo.app_name', 'heyd2c D2C Ops'),
             'scope'        => (string) config('services.woo.scope', 'read_write'),
             'user_id'      => $userId,
             'return_url'   => $return,
@@ -150,5 +150,35 @@ class WooCommerceController extends Controller
         $company->update(['woo_connected_at' => null]);
 
         return back()->with('success', 'WooCommerce disconnected.');
+    }
+
+    public function sync(Request $request): RedirectResponse
+    {
+        $company = app('current_company');
+        $account = IntegrationAccount::query()
+            ->where('company_id', $company->id)
+            ->where('provider', IntegrationAccount::PROVIDER_WOO)
+            ->first();
+
+        if (!$account) {
+            return back()->with('error', 'WooCommerce not connected.');
+        }
+
+        // Force status to connected before sync
+        $account->update(['status' => IntegrationAccount::STATUS_CONNECTED]);
+
+        $beforeCount = \App\Models\Tenant\Order::where('provider', 'woocommerce')->count();
+
+        // Use backfill: true to pull all orders
+        try {
+            SyncWooOrders::dispatchSync($account->id, backfill: true);
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Sync failed: ' . $e->getMessage());
+        }
+
+        $afterCount = \App\Models\Tenant\Order::where('provider', 'woocommerce')->count();
+        $newOrders = $afterCount - $beforeCount;
+
+        return back()->with('success', "WooCommerce synced. Total: {$afterCount} orders" . ($newOrders > 0 ? " ({$newOrders} new)" : " (all up to date)"));
     }
 }

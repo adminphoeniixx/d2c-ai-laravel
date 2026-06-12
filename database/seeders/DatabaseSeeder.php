@@ -19,7 +19,7 @@ class DatabaseSeeder extends Seeder
 
         // Platform admin
         $admin = User::query()->firstOrCreate(
-            ['email' => env('ADMIN_SEED_EMAIL', 'admin@pulsara.test')],
+            ['email' => env('ADMIN_SEED_EMAIL', 'admin@heyd2c.test')],
             [
                 'name'              => 'Platform Admin',
                 'password'          => Hash::make(env('ADMIN_SEED_PASSWORD', 'password')),

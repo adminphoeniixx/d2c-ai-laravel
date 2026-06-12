@@ -10,17 +10,32 @@ use Illuminate\Support\Facades\Http;
 
 class WooClient
 {
-    public function __construct(protected IntegrationAccount $account) {}
+    protected string $baseUrl;
+    protected string $consumerKey;
+    protected string $consumerSecret;
+
+    public function __construct(protected IntegrationAccount $account)
+    {
+        $this->baseUrl = (string) $this->account->getCredential('base_url');
+        $this->consumerKey = (string) $this->account->getCredential('consumer_key');
+        $this->consumerSecret = (string) $this->account->getCredential('consumer_secret');
+
+        if (empty($this->baseUrl) || empty($this->consumerKey) || empty($this->consumerSecret)) {
+            // Mark account as error with clear message
+            $this->account->update([
+                'status' => IntegrationAccount::STATUS_ERROR,
+                'error_message' => 'Credentials could not be decrypted. This usually happens when APP_KEY changes. Please disconnect and reconnect WooCommerce with fresh credentials.',
+            ]);
+            throw new \RuntimeException('WooCommerce credentials invalid or corrupted. Please reconnect your store in Settings → Integrations → WooCommerce.');
+        }
+    }
 
     public function request(): PendingRequest
     {
-        $baseUrl = rtrim((string) $this->account->getCredential('base_url'), '/').'/wp-json/wc/v3/';
+        $baseUrl = rtrim($this->baseUrl, '/').'/wp-json/wc/v3/';
 
         return Http::baseUrl($baseUrl)
-            ->withBasicAuth(
-                (string) $this->account->getCredential('consumer_key'),
-                (string) $this->account->getCredential('consumer_secret'),
-            )
+            ->withBasicAuth($this->consumerKey, $this->consumerSecret)
             ->acceptJson()
             ->timeout(30)
             ->retry(3, 1000);
@@ -41,7 +56,7 @@ class WooClient
                 'per_page' => $perPage,
                 'page'     => $page,
                 'orderby'  => 'date',
-                'order'    => 'asc',
+                'order'    => 'desc',
             ], $query))->throw();
 
             $orders = $response->json();

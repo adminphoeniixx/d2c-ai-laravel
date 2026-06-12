@@ -34,6 +34,8 @@ RUN apk add --no-cache \
     libzip-dev \
     oniguruma-dev \
     icu-dev \
+    poppler-utils \
+    tesseract-ocr \
     && docker-php-ext-install \
     pdo_pgsql \
     pgsql \

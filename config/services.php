@@ -2,17 +2,6 @@
 
 return [
 
-    /*
-    |--------------------------------------------------------------------------
-    | Third Party Services
-    |--------------------------------------------------------------------------
-    |
-    | This file is for storing the credentials for third party services such
-    | as Mailgun, Postmark, AWS and more. This file provides the de facto
-    | location for this type of information, allowing packages to have
-    | a conventional file to locate the various service credentials.
-    |
-    */
 
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
@@ -43,8 +32,18 @@ return [
     ],
 
     'woo' => [
-        'app_name' => env('WOO_APP_NAME', 'Pulsara D2C Ops'),
+        'app_name' => env('WOO_APP_NAME', 'heyd2c D2C Ops'),
         'scope'    => env('WOO_SCOPE', 'read_write'),
+    ],
+
+    'do_ai' => [
+        'base_url'    => env('DO_AI_BASE_URL', 'https://inference.do-ai.run/v1'),
+        'light_key'   => env('DO_AI_LIGHT_KEY'),
+        'light_model'  => env('DO_AI_LIGHT_MODEL', 'deepseek-ai/DeepSeek-V4-Flash'),
+        'heavy_key'   => env('DO_AI_HEAVY_KEY'),
+        'heavy_model'  => env('DO_AI_HEAVY_MODEL', 'nvidia/Nemotron-3-Super-120B'),
+        'vision_key'    => env('DO_AI_VISION_KEY'),
+        'vision_model'  => env('DO_AI_VISION_MODEL', 'nemotron-nano-12b-v2-vl'),
     ],
 
     'bunny' => [
@@ -65,5 +64,11 @@ return [
         'client_secret'   => env('GOOGLE_ADS_CLIENT_SECRET'),
         'developer_token' => env('GOOGLE_ADS_DEVELOPER_TOKEN'),
     ],
+
+    'msg91' => [
+        'auth_key'        => env('MSG91_AUTH_KEY'),
+        'otp_template_id' => env('MSG91_OTP_TEMPLATE_ID'),
+    ],
+    
 
 ];

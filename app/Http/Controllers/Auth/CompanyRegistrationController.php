@@ -32,6 +32,7 @@ class CompanyRegistrationController extends Controller
             'slug'              => ['required', 'string', 'max:60', 'regex:/^[a-z0-9-]+$/', Rule::unique('companies', 'slug')],
             'name'              => ['required', 'string', 'max:120'],
             'email'             => ['required', 'email', 'max:180', Rule::unique('users', 'email')],
+            'phone'             => ['required', 'string', 'min:10'],
             'password'          => ['required', 'string', 'min:8', 'confirmed'],
             'gstin'             => ['nullable', 'string', 'size:15', 'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/'],
             'business_category' => ['nullable', 'string', 'in:apparel,footwear,electronics,beauty,food,luxury,other'],
@@ -40,6 +41,22 @@ class CompanyRegistrationController extends Controller
             'timezone'          => ['nullable', 'string', 'max:64'],
             'terms'             => ['accepted'],
         ]);
+
+        // Verify phone was OTP-verified
+        $phone = preg_replace('/[^0-9]/', '', $validated['phone']);
+        if (strlen($phone) > 10 && str_starts_with($phone, '91')) {
+            $phone = substr($phone, -10);
+        }
+        // Normalize to last 10 digits for cache lookup
+        $phone10 = substr($phone, -10);
+        if (!\Illuminate\Support\Facades\Cache::get("reg_verified:{$phone10}") &&
+            !\Illuminate\Support\Facades\Cache::get("reg_verified:{$phone}")) {
+            return back()->withErrors(['phone' => 'Phone number not verified. Please verify with OTP first.']);
+        }
+        \Illuminate\Support\Facades\Cache::forget("reg_verified:{$phone10}");
+        \Illuminate\Support\Facades\Cache::forget("reg_verified:{$phone}");
+        // Store with +91 prefix for consistency
+        $phone = '+91' . $phone10;
 
         // Auto-detect state from GSTIN and set default GST rate from category
         $registeredStateCode = null;
@@ -76,6 +93,7 @@ class CompanyRegistrationController extends Controller
             'company_id' => $company->id,
             'name'       => $validated['name'],
             'email'      => $validated['email'],
+            'phone'      => $phone,
             'password'   => Hash::make($validated['password']),
         ]);
         $user->assignRole('owner');
@@ -106,6 +124,6 @@ class CompanyRegistrationController extends Controller
 
         return redirect()
             ->route('tenant.dashboard', ['tenant' => $company->slug])
-            ->with('success', 'Workspace created. Welcome to Pulsara 👋');
+            ->with('success', 'Workspace created. Welcome to heyd2c 👋');
     }
 }

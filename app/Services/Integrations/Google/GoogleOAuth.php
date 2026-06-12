@@ -13,8 +13,8 @@ class GoogleOAuth
 
     public function __construct()
     {
-        $this->clientId = config('services.google_ads.client_id', '');
-        $this->clientSecret = config('services.google_ads.client_secret', '');
+        $this->clientId = config('services.google_ads.client_id') ?? '';
+        $this->clientSecret = config('services.google_ads.client_secret') ?? '';
     }
 
     public function buildAuthorizeUrl(string $redirectUri, string $state): string

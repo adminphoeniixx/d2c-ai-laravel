@@ -14,7 +14,11 @@ class EnsureAdmin
     {
         $user = $request->user();
 
-        if (! $user || ! $user->is_admin) {
+        if (!$user) {
+            return redirect()->route('admin.login');
+        }
+
+        if (!$user->is_admin) {
             abort(403, 'Admins only.');
         }
 

@@ -148,4 +148,32 @@ class ShopifyController extends Controller
 
         return back()->with('success', 'Shopify disconnected.');
     }
+
+    public function sync(Request $request): RedirectResponse
+    {
+        $company = app('current_company');
+        $account = IntegrationAccount::query()
+            ->where('company_id', $company->id)
+            ->where('provider', IntegrationAccount::PROVIDER_SHOPIFY)
+            ->first();
+
+        if (!$account) {
+            return back()->with('error', 'Shopify not connected.');
+        }
+
+        $account->update(['status' => IntegrationAccount::STATUS_CONNECTED]);
+
+        $beforeCount = \App\Models\Tenant\Order::where('provider', 'shopify')->count();
+
+        try {
+            SyncShopifyOrders::dispatchSync($account->id, backfill: true);
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Sync failed: ' . $e->getMessage());
+        }
+
+        $afterCount = \App\Models\Tenant\Order::where('provider', 'shopify')->count();
+        $newOrders = $afterCount - $beforeCount;
+
+        return back()->with('success', "Shopify synced. Total: {$afterCount} orders" . ($newOrders > 0 ? " ({$newOrders} new)" : " (all up to date)"));
+    }
 }

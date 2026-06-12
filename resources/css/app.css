@@ -81,15 +81,15 @@
     .kpi-label { @apply text-[11px] uppercase tracking-widest font-mono; color: var(--txt-3); }
     .kpi-value { @apply text-[28px] font-bold leading-none; color: var(--txt); }
 
-    .pulsara-input {
+    .heyd2c-input {
         @apply w-full rounded-[10px] border px-3.5 py-2.5 text-[13px] transition-colors outline-none;
         background: var(--bg-3);
         border-color: var(--border-2);
         color: var(--txt);
     }
-    .pulsara-input:focus, .pulsara-input:hover { border-color: var(--border-3); }
-    .pulsara-input::placeholder { color: var(--txt-3); }
-    .pulsara-label { @apply block text-[11px] font-mono uppercase tracking-widest mb-1.5; color: var(--txt-3); }
+    .heyd2c-input:focus, .heyd2c-input:hover { border-color: var(--border-3); }
+    .heyd2c-input::placeholder { color: var(--txt-3); }
+    .heyd2c-label { @apply block text-[11px] font-mono uppercase tracking-widest mb-1.5; color: var(--txt-3); }
 
     .nav-group-label {
         @apply text-[9px] font-mono uppercase tracking-widest px-2.5 pt-3 pb-1.5;

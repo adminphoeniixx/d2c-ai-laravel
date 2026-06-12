@@ -14,7 +14,20 @@ use Illuminate\Support\Facades\Http;
  */
 class ShopifyClient
 {
-    public function __construct(protected IntegrationAccount $account) {}
+    protected string $accessToken;
+
+    public function __construct(protected IntegrationAccount $account)
+    {
+        $this->accessToken = (string) $this->account->getCredential('access_token');
+
+        if (empty($this->accessToken)) {
+            $this->account->update([
+                'status' => IntegrationAccount::STATUS_ERROR,
+                'error_message' => 'Credentials could not be decrypted. This usually happens when APP_KEY changes. Please disconnect and reconnect Shopify.',
+            ]);
+            throw new \RuntimeException('Shopify credentials invalid or corrupted. Please reconnect your store in Settings → Integrations → Shopify.');
+        }
+    }
 
     public function request(): PendingRequest
     {
@@ -22,7 +35,7 @@ class ShopifyClient
 
         return Http::baseUrl("https://{$this->account->shop_domain}/admin/api/{$version}/")
             ->withHeaders([
-                'X-Shopify-Access-Token' => $this->account->getCredential('access_token'),
+                'X-Shopify-Access-Token' => $this->accessToken,
                 'Accept' => 'application/json',
             ])
             ->timeout(30)

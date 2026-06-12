@@ -14,16 +14,20 @@ class IntegrationServiceProvider extends ServiceProvider
     {
         // Log sync completions into integration_logs for the admin viewer
         Event::listen(IntegrationSyncCompleted::class, function (IntegrationSyncCompleted $e) {
-            \DB::table('integration_logs')->insert([
-                'company_id' => $e->companyId,
-                'provider'   => $e->provider,
-                'event'      => 'sync.completed',
-                'level'      => $e->failed > 0 ? 'warn' : 'info',
-                'message'    => "Synced {$e->orderCount} orders (failed: {$e->failed})",
-                'context'    => json_encode(['order_count' => $e->orderCount, 'failed' => $e->failed]),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+            try {
+                \DB::table('integration_logs')->insert([
+                    'company_id' => $e->companyId,
+                    'provider'   => $e->provider,
+                    'event'      => 'sync.completed',
+                    'level'      => $e->failed > 0 ? 'warn' : 'info',
+                    'message'    => "Synced {$e->orderCount} orders (failed: {$e->failed})",
+                    'context'    => json_encode(['order_count' => $e->orderCount, 'failed' => $e->failed]),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            } catch (\Throwable $ex) {
+                // Table may not exist yet — don't break the sync
+            }
         });
     }
 }

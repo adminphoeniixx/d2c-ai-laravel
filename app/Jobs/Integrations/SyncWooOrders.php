@@ -44,9 +44,9 @@ class SyncWooOrders implements ShouldQueue
         $client = new WooClient($account);
 
         $query = $this->backfill
-            ? ['after' => Carbon::now()->subYear()->toIso8601String()]
+            ? ['status' => 'any']
             : ['modified_after' => optional($account->last_synced_at)->toIso8601String()
-                                    ?? Carbon::now()->subDay()->toIso8601String()];
+                                    ?? Carbon::now()->subDay()->toIso8601String(), 'status' => 'any'];
 
         $total = 0;
         $failed = 0;
@@ -67,9 +67,30 @@ class SyncWooOrders implements ShouldQueue
                 }
             }
 
+            // Clean up trashed/deleted orders from WooCommerce
+            try {
+                foreach ($client->orders(['status' => 'trash']) as $page) {
+                    foreach ($page as $o) {
+                        $existing = Order::where('provider', 'woocommerce')
+                            ->where('external_id', (string) $o['id'])
+                            ->first();
+                        if ($existing) {
+                            $existing->items()->delete();
+                            $existing->delete();
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Trash cleanup is best-effort
+            }
+
             $account->update(['last_synced_at' => now(), 'status' => IntegrationAccount::STATUS_CONNECTED, 'error_message' => null]);
 
-            event(new IntegrationSyncCompleted($company->id, 'woocommerce', $total, $failed));
+            try {
+                event(new IntegrationSyncCompleted($company->id, 'woocommerce', $total, $failed));
+            } catch (\Throwable $logErr) {
+                // Don't let logging failure override connected status
+            }
         } catch (\Throwable $e) {
             $account->update(['status' => IntegrationAccount::STATUS_ERROR, 'error_message' => $e->getMessage()]);
             throw $e;
@@ -80,6 +101,18 @@ class SyncWooOrders implements ShouldQueue
 
     protected function upsert(array $o): void
     {
+        // If order was trashed/deleted in WooCommerce, remove from our DB
+        if (in_array($o['status'] ?? '', ['trash', 'auto-draft', 'draft'])) {
+            $existing = Order::where('provider', 'woocommerce')
+                ->where('external_id', (string) $o['id'])
+                ->first();
+            if ($existing) {
+                $existing->items()->delete();
+                $existing->delete();
+            }
+            return;
+        }
+
         $order = Order::updateOrCreate(
             ['provider' => 'woocommerce', 'external_id' => (string) $o['id']],
             [

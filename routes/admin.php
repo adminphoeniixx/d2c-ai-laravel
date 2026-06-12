@@ -26,6 +26,7 @@ Route::middleware(['auth', 'verified', 'admin'])->group(function () {
 
     // Companies (tenants) management
     Route::resource('companies', CompanyController::class);
+    Route::post('companies/{company}/destroy',        [CompanyController::class, 'destroy'])->name('companies.destroy.post');
     Route::post('companies/{company}/suspend',   [CompanyController::class, 'suspend'])->name('companies.suspend');
     Route::post('companies/{company}/activate',  [CompanyController::class, 'activate'])->name('companies.activate');
     Route::post('companies/{company}/impersonate', [CompanyController::class, 'impersonate'])->name('companies.impersonate');
@@ -43,3 +44,31 @@ Route::middleware(['auth', 'verified', 'admin'])->group(function () {
     Route::get('system/integrations',  [IntegrationLogController::class, 'index'])->name('system.integrations');
     Route::get('system/audit',         [AuditLogController::class, 'index'])->name('system.audit');
 });
+
+// ── Subscription Management
+Route::prefix('subscriptions')->name('subscriptions.')->group(function () {
+    Route::get('/',                            [\App\Http\Controllers\Admin\SubscriptionController::class, 'dashboard'])->name('dashboard');
+    Route::get('/plans',                       [\App\Http\Controllers\Admin\SubscriptionController::class, 'plans'])->name('plans');
+    Route::put('/plans/{plan}',                [\App\Http\Controllers\Admin\SubscriptionController::class, 'updatePlan'])->name('plans.update');
+    Route::get('/list',                        [\App\Http\Controllers\Admin\SubscriptionController::class, 'subscriptions'])->name('list');
+    Route::post('/list/{subscription}/cancel', [\App\Http\Controllers\Admin\SubscriptionController::class, 'cancelSubscription'])->name('cancel');
+    Route::get('/coupons',                     [\App\Http\Controllers\Admin\SubscriptionController::class, 'coupons'])->name('coupons');
+    Route::post('/coupons',                    [\App\Http\Controllers\Admin\SubscriptionController::class, 'storeCoupon'])->name('coupons.store');
+    Route::patch('/coupons/{coupon}',          [\App\Http\Controllers\Admin\SubscriptionController::class, 'updateCoupon'])->name('coupons.update');
+    Route::delete('/coupons/{coupon}',         [\App\Http\Controllers\Admin\SubscriptionController::class, 'deleteCoupon'])->name('coupons.destroy');
+    Route::get('/settings',                    [\App\Http\Controllers\Admin\SubscriptionController::class, 'settings'])->name('settings');
+    Route::post('/settings',                   [\App\Http\Controllers\Admin\SubscriptionController::class, 'updateSettings'])->name('settings.update');
+});
+
+// ── Email Templates
+Route::prefix('emails')->name('emails.')->group(function () {
+    Route::get('/',                           [\App\Http\Controllers\Admin\EmailTemplateController::class, 'index'])->name('index');
+    Route::put('/{emailTemplate}',            [\App\Http\Controllers\Admin\EmailTemplateController::class, 'update'])->name('update');
+    Route::post('/settings',                  [\App\Http\Controllers\Admin\EmailTemplateController::class, 'updateSettings'])->name('settings');
+    Route::get('/test-connection',            [\App\Http\Controllers\Admin\EmailTemplateController::class, 'testConnection'])->name('test-connection');
+    Route::post('/{emailTemplate}/send-test', [\App\Http\Controllers\Admin\EmailTemplateController::class, 'sendTest'])->name('send-test');
+});
+
+// ── Company extra routes
+Route::post('companies/{company}/update-owner', [\App\Http\Controllers\Admin\CompanyController::class, 'updateOwner'])->name('companies.update-owner');
+Route::post('companies/{company}/set-plan',     [\App\Http\Controllers\Admin\CompanyController::class, 'setPlan'])->name('companies.set-plan');

@@ -169,4 +169,46 @@ class DashboardController extends Controller
         }
         return round((($current - $previous) / $previous) * 100, 1);
     }
+
+    /**
+     * Sync all connected integrations (Shopify + WooCommerce).
+     */
+    public function syncAll(): \Illuminate\Http\JsonResponse
+    {
+        $company = app('current_company');
+        $results = [];
+
+        $accounts = \App\Models\IntegrationAccount::where('company_id', $company->id)->get();
+
+        foreach ($accounts as $account) {
+            try {
+                $account->update(['status' => \App\Models\IntegrationAccount::STATUS_CONNECTED]);
+
+                if ($account->provider === 'shopify') {
+                    \App\Jobs\Integrations\SyncShopifyOrders::dispatchSync($account->id, backfill: true);
+                    $results[] = 'Shopify synced';
+                } elseif ($account->provider === 'woocommerce') {
+                    \App\Jobs\Integrations\SyncWooOrders::dispatchSync($account->id, backfill: true);
+                    $results[] = 'WooCommerce synced';
+                }
+            } catch (\Throwable $e) {
+                $results[] = $account->provider . ' failed: ' . $e->getMessage();
+            }
+        }
+
+        return response()->json(['results' => $results, 'synced' => count($results)]);
+    }
+
+    /**
+     * Smart PDF extraction — auto-detects invoice type and extracts details.
+     */
+    public function extractPdf(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $request->validate(['pdf' => ['required', 'file', 'mimes:pdf', 'max:10240']]);
+
+        $extractor = new \App\Services\InvoicePdfExtractor();
+        $data = $extractor->extract($request->file('pdf')->getRealPath());
+
+        return response()->json($data);
+    }
 }
