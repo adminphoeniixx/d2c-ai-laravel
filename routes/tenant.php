@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Tenant\AdAnalyticsController;
 use App\Http\Controllers\Tenant\AiCopilotController;
+use App\Http\Controllers\Tenant\AiInsightsController;
 use App\Http\Controllers\Tenant\CashFlowController;
 use App\Http\Controllers\Tenant\DashboardController;
 use App\Http\Controllers\Tenant\ExpensesController;
@@ -144,6 +145,11 @@ Route::middleware(['auth', 'verified', 'tenant'])->group(function () {
 
     Route::get('/ai',         [AiCopilotController::class, 'index'])->name('ai');
     Route::post('/ai/prompt', [AiCopilotController::class, 'prompt'])->name('ai.prompt');
+    Route::get('/ai/conversations/{id}',    [AiCopilotController::class, 'showConversation'])->name('ai.conversations.show');
+    Route::delete('/ai/conversations/{id}', [AiCopilotController::class, 'destroyConversation'])->name('ai.conversations.destroy');
+
+    Route::get('/ai-insights',          [AiInsightsController::class, 'index'])->name('ai-insights');
+    Route::post('/ai-insights/refresh', [AiInsightsController::class, 'refresh'])->name('ai-insights.refresh');
 
     Route::prefix('integrations')->name('integrations.')->group(function () {
         Route::get('/shopify',             [ShopifyController::class, 'show'])->name('shopify.show');
@@ -235,6 +241,7 @@ Route::middleware(['auth', 'verified', 'tenant'])->group(function () {
     Route::prefix('payment-gateway')->name('pg.')->group(function () {
         Route::get('/',        [\App\Http\Controllers\Tenant\PaymentGatewayController::class, 'index'])->name('index');
         Route::post('/upload', [\App\Http\Controllers\Tenant\PaymentGatewayController::class, 'upload'])->name('upload');
+        Route::get('/{id}',    [\App\Http\Controllers\Tenant\PaymentGatewayController::class, 'show'])->name('show');
         Route::delete('/{id}', [\App\Http\Controllers\Tenant\PaymentGatewayController::class, 'destroy'])->name('destroy');
     });
 

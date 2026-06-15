@@ -20,7 +20,7 @@ const voiceModalOpen = ref(false);
 </script>
 
 <template>
-    <Head title="Operations Dashboard" />
+    <Head title="Insights" />
     <TenantLayout>
         <div class="card relative overflow-hidden mb-5">
             <div class="pointer-events-none absolute -right-12 -top-12 h-56 w-56 rounded-full bg-brand-600/20 blur-3xl" />
@@ -66,7 +66,7 @@ const voiceModalOpen = ref(false);
             </div>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
             <KpiCard
                 v-for="k in orderMetrics" :key="k.key"
                 :label="k.label"

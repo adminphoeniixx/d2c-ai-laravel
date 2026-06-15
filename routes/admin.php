@@ -43,6 +43,16 @@ Route::middleware(['auth', 'verified', 'admin'])->group(function () {
     Route::get('system/health',        [SystemHealthController::class, 'index'])->name('system.health');
     Route::get('system/integrations',  [IntegrationLogController::class, 'index'])->name('system.integrations');
     Route::get('system/audit',         [AuditLogController::class, 'index'])->name('system.audit');
+
+    // Admin profile / 2FA
+    Route::get('/profile', fn() => inertia('Admin/Profile/Show'))->name('profile');
+
+    // KYC Management
+    Route::prefix('kyc')->name('kyc.')->group(function () {
+        Route::get('/',              [\App\Http\Controllers\Admin\KycController::class, 'index'])->name('index');
+        Route::post('/{id}/approve', [\App\Http\Controllers\Admin\KycController::class, 'approve'])->name('approve');
+        Route::post('/{id}/reject',  [\App\Http\Controllers\Admin\KycController::class, 'reject'])->name('reject');
+    });
 });
 
 // ── Subscription Management

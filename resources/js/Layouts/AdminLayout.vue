@@ -1,9 +1,9 @@
 <script setup>
-import { Link, usePage } from '@inertiajs/vue3';
+import { Link, usePage, router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import {
     LayoutDashboard, Building2, Users, Shield, KeyRound,
-    Activity, Plug, History, LogOut, Menu, X, CreditCard, Mail, ShieldCheck,
+    Activity, Plug, History, LogOut, Menu, X, CreditCard, Mail, ShieldCheck, UserCog,
 } from 'lucide-vue-next';
 import LogoMark from '@/Components/LogoMark.vue';
 import FlashToasts from '@/Components/FlashToasts.vue';
@@ -33,6 +33,7 @@ const nav = [
         { name: 'Health',       icon: Activity, route: 'admin.system.health' },
         { name: 'Integrations', icon: Plug,     route: 'admin.system.integrations' },
         { name: 'Audit Log',    icon: History,  route: 'admin.system.audit' },
+        { name: 'Profile & 2FA', icon: UserCog, route: 'admin.profile' },
     ]},
 ];
 
@@ -50,6 +51,8 @@ const pageTitle = computed(() => {
         'admin.system.health':       'System Health',
         'admin.system.integrations': 'Integration Logs',
         'admin.system.audit':        'Audit Trail',
+        'admin.profile':             'Profile & Security',
+        'admin.kyc.index':           'KYC Management',
     };
     return map[current] || 'heyd2c Admin';
 });
@@ -91,7 +94,8 @@ const pageTitle = computed(() => {
             </nav>
 
             <div class="relative border-t border-frost-1 p-3">
-                <div class="flex items-center gap-2.5 px-2.5 py-2">
+                <div class="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-frost-1 transition cursor-pointer"
+                    @click="router.visit(route('admin.profile'))">
                     <div class="h-8 w-8 rounded-full bg-gradient-to-br from-brand-600 to-fuchsia flex items-center justify-center text-white text-[12px] font-semibold">
                         {{ user?.initials || user?.name?.charAt(0) || '?' }}
                     </div>
@@ -99,7 +103,7 @@ const pageTitle = computed(() => {
                         <div class="text-[12.5px] font-medium text-ink truncate">{{ user?.name }}</div>
                         <div class="text-[10.5px] font-mono tracking-wider text-brand-400">ADMIN</div>
                     </div>
-                    <Link :href="route('logout')" method="post" as="button" class="text-ink-3 hover:text-rose">
+                    <Link :href="route('logout')" method="post" as="button" class="text-ink-3 hover:text-rose" @click.stop>
                         <LogOut :size="15" />
                     </Link>
                 </div>

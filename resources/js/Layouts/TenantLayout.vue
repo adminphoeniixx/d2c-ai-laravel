@@ -3,7 +3,7 @@ import { Link, router, usePage } from '@inertiajs/vue3';
 import { computed, onMounted, ref } from 'vue';
 import {
     LayoutDashboard, FileText, Receipt, ShoppingBag, Megaphone, IndianRupee,
-    PackageSearch, Wallet, TrendingUp, Bot, ChevronDown, LogOut, User as UserIcon,
+    PackageSearch, Wallet, TrendingUp, Bot, Sparkles, ChevronDown, LogOut, User as UserIcon,
     Menu, X, RefreshCw, Plug, Settings as SettingsIcon, Users, FileSignature, ClipboardList,
     Clock, Truck, Building2, Boxes, HardHat, CalendarDays, CalendarCheck, AlertTriangle, Timer,
     Headphones, MessageSquare, HelpCircle, FolderKanban, Shield, UserPlus, Landmark,
@@ -44,7 +44,7 @@ const nav = computed(() => ([
     {
         label: 'OVERVIEW',
         items: [
-            { name: 'Dashboard',      icon: LayoutDashboard, href: route('tenant.dashboard',  { tenant: slug.value }), active: route().current('tenant.dashboard') },
+            { name: 'Analytics',      icon: LayoutDashboard, href: route('tenant.dashboard',  { tenant: slug.value }), active: route().current('tenant.dashboard') },
             { name: 'P&L Report',     icon: FileText,        href: route('tenant.pnl',        { tenant: slug.value }), active: route().current('tenant.pnl') },
             { name: 'Expenses',       icon: Receipt,         href: route('tenant.expenses',   { tenant: slug.value }), active: route().current('tenant.expenses*') },
             { name: 'Orders',         icon: ShoppingBag,     href: route('tenant.orders',     { tenant: slug.value }), active: route().current('tenant.orders*') },
@@ -83,7 +83,8 @@ const nav = computed(() => ([
     {
         label: 'AI',
         items: [
-            { name: 'AI Copilot', icon: Bot, href: route('tenant.ai', { tenant: slug.value }), active: route().current('tenant.ai') },
+            { name: 'AI Copilot',  icon: Bot,      href: route('tenant.ai', { tenant: slug.value }), active: route().current('tenant.ai') },
+            { name: 'AI Insights', icon: Sparkles, href: route('tenant.ai-insights', { tenant: slug.value }), active: route().current('tenant.ai-insights') },
         ],
     },
     {
@@ -135,7 +136,7 @@ function syncNow() {
 }
 
 const pageTitle = computed(() => {
-    if (route().current('tenant.dashboard')) return 'Operations Dashboard';
+    if (route().current('tenant.dashboard')) return 'Insights';
     if (route().current('tenant.pnl'))       return 'P&L Report';
     if (route().current('tenant.expenses'))  return 'Expenses';
     if (route().current('tenant.orders'))    return 'Orders';
@@ -144,6 +145,7 @@ const pageTitle = computed(() => {
     if (route().current('tenant.payroll'))   return 'Payroll Intelligence';
     if (route().current('tenant.cashflow'))  return 'Cash Flow';
     if (route().current('tenant.ai'))        return 'AI Copilot';
+    if (route().current('tenant.ai-insights')) return 'AI Insights';
     return 'heyd2c';
 });
 

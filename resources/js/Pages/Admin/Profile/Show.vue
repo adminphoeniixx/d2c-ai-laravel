@@ -2,13 +2,8 @@
 import { ref, computed } from 'vue'
 import { Head, useForm, usePage, router } from '@inertiajs/vue3'
 import axios from 'axios'
-import { User, Lock, Shield, Smartphone, Eye, EyeOff, CheckCircle, Copy, ShieldCheck } from 'lucide-vue-next'
-import TenantLayout from '@/Layouts/TenantLayout.vue'
-
-const props = defineProps({
-    confirmsTwoFactorAuthentication: Boolean,
-    sessions: Array,
-})
+import { User, Lock, Smartphone, Eye, EyeOff, CheckCircle, Copy, ShieldCheck } from 'lucide-vue-next'
+import AdminLayout from '@/Layouts/AdminLayout.vue'
 
 const page = usePage()
 const user = computed(() => page.props.auth.user)
@@ -17,7 +12,6 @@ const user = computed(() => page.props.auth.user)
 const profileForm = useForm({
     name:  user.value?.name  || '',
     email: user.value?.email || '',
-    phone: user.value?.phone || '',
 })
 
 function saveProfile() {
@@ -37,20 +31,20 @@ function savePassword() {
 }
 
 // 2FA
-const twoFactorEnabled    = computed(() => !!user.value?.two_factor_confirmed_at)
-const showingQrCode       = ref(false)
-const showingRecoveryCodes= ref(false)
-const qrCode              = ref(null)
-const recoveryCodes       = ref([])
-const confirmationCode    = ref('')
-const twoFaForm           = useForm({ code: '' })
+const twoFactorEnabled     = computed(() => !!user.value?.two_factor_confirmed_at)
+const showingQrCode        = ref(false)
+const showingRecoveryCodes = ref(false)
+const qrCode                = ref(null)
+const recoveryCodes         = ref([])
+const confirmationCode      = ref('')
+const twoFaForm             = useForm({ code: '' })
 
 // Inline password confirmation modal (avoids full-page redirects entirely)
 const showPwConfirm = ref(false)
 const pwConfirmValue = ref('')
 const pwConfirmError = ref('')
 const pwConfirmBusy  = ref(false)
-const pendingAfterConfirm = ref(null)
+const pendingAfterConfirm = ref(null) // function to run after password confirmed
 
 function requirePasswordThen(action) {
     pendingAfterConfirm.value = action
@@ -107,7 +101,7 @@ async function showRecoveryCodes() {
 }
 
 function disableTwoFactor() {
-    if (!confirm('Disable two-factor authentication? This will make your account less secure.')) return
+    if (!confirm('Disable two-factor authentication? This will make your admin account less secure.')) return
     requirePasswordThen(() => router.delete(route('two-factor.disable'), { preserveScroll: true }))
 }
 
@@ -116,11 +110,12 @@ function copyCode(code) {
 }
 </script>
 
+
 <template>
-<Head title="Profile" />
-<TenantLayout>
+<Head title="Admin Profile" />
+<AdminLayout>
     <div class="max-w-2xl space-y-5">
-        <h1 class="text-[20px] font-bold text-white">Profile Settings</h1>
+        <h1 class="text-[20px] font-bold text-white">Admin Profile & Security</h1>
 
         <!-- Profile Info -->
         <div class="card space-y-4">
@@ -137,10 +132,6 @@ function copyCode(code) {
                 <label class="heyd2c-label">Email Address</label>
                 <input v-model="profileForm.email" type="email" class="heyd2c-input" />
                 <p v-if="profileForm.errors.email" class="text-rose-400 text-[11px] mt-1">{{ profileForm.errors.email }}</p>
-            </div>
-            <div>
-                <label class="heyd2c-label">Mobile Number</label>
-                <input v-model="profileForm.phone" type="tel" class="heyd2c-input font-mono" placeholder="+91XXXXXXXXXX" />
             </div>
             <div class="flex justify-end">
                 <button @click="saveProfile" :disabled="profileForm.processing"
@@ -202,8 +193,8 @@ function copyCode(code) {
             </div>
 
             <p class="text-[12px] text-ink-3">
-                Add extra security to your account using Google Authenticator or any TOTP app.
-                When enabled, you'll be asked for a 6-digit code on each login.
+                Protect your admin account with Google Authenticator or any TOTP app.
+                When enabled, you'll need a 6-digit code on every admin login.
             </p>
 
             <!-- Not enabled -->
@@ -217,7 +208,7 @@ function copyCode(code) {
             <div v-if="showingQrCode" class="space-y-4">
                 <div class="bg-white rounded-xl p-4 inline-block" v-html="qrCode"></div>
                 <p class="text-[12px] text-ink-3">
-                    Scan this QR code with <strong class="text-white">Google Authenticator</strong> or any TOTP app, then enter the 6-digit code below.
+                    Scan this QR code with <strong class="text-white">Google Authenticator</strong> (or any TOTP app), then enter the 6-digit code below.
                 </p>
                 <div>
                     <label class="heyd2c-label">Confirmation Code</label>
@@ -286,5 +277,5 @@ function copyCode(code) {
             </div>
         </div>
     </div>
-</TenantLayout>
+</AdminLayout>
 </template>

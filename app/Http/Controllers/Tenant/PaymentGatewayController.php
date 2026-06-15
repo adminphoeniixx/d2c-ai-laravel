@@ -83,19 +83,19 @@ class PaymentGatewayController extends Controller
 
     private function extractFromPdf($file): array
     {
-        // Use pdftotext (available via poppler-utils in Docker) to extract text
         $tmpPath = $file->getRealPath();
         $text    = '';
 
         if (function_exists('shell_exec')) {
             $escaped = escapeshellarg($tmpPath);
             $text    = shell_exec("pdftotext {$escaped} - 2>/dev/null") ?? '';
+            \Illuminate\Support\Facades\Log::info("PG PDF pdftotext output length: " . strlen($text));
         }
 
         if (empty(trim($text))) {
-            // Fallback: try to read raw content for text-based PDFs
             $raw  = file_get_contents($tmpPath);
             $text = preg_replace('/[^\x20-\x7E\n]/', ' ', $raw);
+            \Illuminate\Support\Facades\Log::info("PG PDF fallback raw text length: " . strlen($text));
         }
 
         return $this->extractWithAI($text, $file->getClientOriginalName());
@@ -133,14 +133,17 @@ class PaymentGatewayController extends Controller
     private function extractWithAI(string $text, string $filename): array
     {
         if (empty(trim($text))) {
+            \Illuminate\Support\Facades\Log::info("PG: empty text for {$filename}, using fallback");
             return $this->fallbackFromFilename($filename);
         }
+
+        \Illuminate\Support\Facades\Log::info("PG: extracted text length=" . strlen($text) . " for {$filename}");
 
         $response = Http::withHeaders([
             'Authorization' => 'Bearer ' . config('services.do_ai.light_key'),
             'Content-Type'  => 'application/json',
         ])->timeout(30)->post(config('services.do_ai.base_url') . '/chat/completions', [
-            'model'    => 'deepseek-ai/DeepSeek-V4-Flash',
+            'model'    => config('services.do_ai.light_model', 'deepseek-4-flash'),
             'messages' => [
                 ['role' => 'system', 'content' => 'You are a payment gateway invoice parser. Return ONLY valid JSON, no markdown, no explanation.'],
                 ['role' => 'user',   'content' => $this->aiPrompt() . "\n\nDocument content:\n" . $text],
@@ -148,7 +151,10 @@ class PaymentGatewayController extends Controller
             'max_tokens' => 600,
         ]);
 
-        return $this->parseAiResponse($response->json('choices.0.message.content', '{}'));
+        $raw = $response->json('choices.0.message.content', '{}');
+        \Illuminate\Support\Facades\Log::info("PG: AI response: {$raw}");
+
+        return $this->parseAiResponse($raw);
     }
 
     private function aiPrompt(): string
@@ -158,6 +164,8 @@ class PaymentGatewayController extends Controller
 - gateway: the PG name in lowercase (razorpay, payu, cashfree, stripe, phonepe, ccavenue, paytm, other)
 - invoice_number: the invoice or document number/ID
 - period: billing period as readable string e.g. "Apr 2026" or "01/04/26 - 30/04/26"
+- period_start: the FIRST day of the billing period as an ISO date "YYYY-MM-DD" (e.g. if period is "Apr 2026" use "2026-04-01"; if period is "01/04/26 - 30/04/26" use "2026-04-01"). If you cannot determine this, use null.
+- period_end: the LAST day of the billing period as an ISO date "YYYY-MM-DD" (e.g. if period is "Apr 2026" use "2026-04-30"; if period is "01/04/26 - 30/04/26" use "2026-04-30"). If you cannot determine this, use null.
 - gross_volume: total payment volume processed by merchants (NOT the invoice amount). For Razorpay this is the settlement amount or total transactions processed. If not available, use 0.
 - total_charges: PG commission/fee BEFORE tax. For Razorpay look for "Commission" or "Amount" column BEFORE GST.
 - gst_amount: total GST charged (CGST + SGST + IGST combined)
@@ -170,7 +178,7 @@ IMPORTANT for Razorpay invoices:
 - gross_volume = 0 unless a separate "Payment Volume" or "Total Transactions" figure is shown
 
 Return ONLY valid JSON, no markdown, no explanation:
-{"gateway":"","invoice_number":"","period":"","gross_volume":0,"total_charges":0,"gst_amount":0,"net_settled":0}';
+{"gateway":"","invoice_number":"","period":"","period_start":null,"period_end":null,"gross_volume":0,"total_charges":0,"gst_amount":0,"net_settled":0}';
     }
 
     private function parseAiResponse(string $text): array
@@ -195,11 +203,27 @@ Return ONLY valid JSON, no markdown, no explanation:
             'gateway'        => strtolower(trim($data['gateway']         ?? '')),
             'invoice_number' => trim($data['invoice_number']             ?? '') ?: null,
             'period'         => trim($data['period']                     ?? '') ?: null,
+            'period_start'   => $this->normalizeDate($data['period_start'] ?? null),
+            'period_end'     => $this->normalizeDate($data['period_end']   ?? null),
             'gross_volume'   => (float) ($data['gross_volume']           ?? 0),
             'total_charges'  => (float) ($data['total_charges']          ?? 0),
             'gst_amount'     => (float) ($data['gst_amount']             ?? 0),
             'net_settled'    => (float) ($data['net_settled']            ?? 0),
         ];
+    }
+
+    /**
+     * Validate an AI-extracted date string, returning a Y-m-d string or null.
+     */
+    private function normalizeDate($value): ?string
+    {
+        if (empty($value) || !is_string($value)) return null;
+
+        try {
+            return \Illuminate\Support\Carbon::parse($value)->toDateString();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private function fallbackFromFilename(string $filename): array
@@ -215,5 +239,10 @@ Return ONLY valid JSON, no markdown, no explanation:
     {
         PgInvoice::findOrFail($id)->delete();
         return back()->with('success', 'Invoice deleted.');
+    }
+
+    public function show(string $tenant, int $id)
+    {
+        return response()->json(PgInvoice::findOrFail($id));
     }
 }
