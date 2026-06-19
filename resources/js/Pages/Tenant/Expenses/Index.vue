@@ -203,13 +203,13 @@ onMounted(() => { loadSettings(); });
 </script>
 
 <template>
-    <Head title="Expenses" />
+    <Head title="Daily Expenses" />
     <TenantLayout>
         <div class="space-y-6">
             <!-- Header -->
             <div class="flex items-center justify-between">
                 <div>
-                    <h1 class="text-2xl font-bold text-white">Expenses</h1>
+                    <h1 class="text-2xl font-bold text-white">Daily Expenses</h1>
                     <p class="text-sm text-slate-400 mt-1">Track all your operating costs · Upload receipts for AI extraction</p>
                 </div>
                 <div class="flex gap-3">

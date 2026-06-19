@@ -5,13 +5,16 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Models\Tenant\Expense;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
+use App\Models\Tenant\PgInvoice;
 use App\Services\GST\GSTCalculator;
 use App\Services\GST\StateCodeMap;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -153,11 +156,13 @@ class GSTController extends Controller
             $monthlySummary = $this->monthlySummary($start, $end);
             $stateWise = $this->stateWiseBreakdown($start, $end);
             $orders = $this->ordersWithGST($start, $end);
+            $reconciliation = $this->reconciliation($start, $end, $summary);
         } catch (\Throwable $e) {
             $summary = ['cgst' => 0, 'sgst' => 0, 'igst' => 0, 'total_gst' => 0, 'taxable_amount' => 0, 'order_count' => 0, 'total_revenue' => 0];
             $monthlySummary = [];
             $stateWise = [];
             $orders = [];
+            $reconciliation = $this->emptyReconciliation();
         }
 
         return Inertia::render('Tenant/GSTSummary', [
@@ -171,12 +176,77 @@ class GSTController extends Controller
             'monthlySummary' => $monthlySummary,
             'stateWise'      => $stateWise,
             'orders'         => $orders,
+            'reconciliation' => $reconciliation,
             'filters'        => [
                 'from' => $start->format('Y-m-d'),
                 'to'   => $end->format('Y-m-d'),
             ],
         ]);
     }
+
+    /**
+     * GST reconciliation: output tax (collected on sales) vs input tax
+     * credit (GST paid on expenses & payment-gateway invoices) for the period.
+     */
+    protected function reconciliation(Carbon $start, Carbon $end, array $summary): array
+    {
+        $outputGst = $summary['total_gst'];
+
+        // ITC from manually-logged / AI-extracted expenses (extracted_data.gst_amount)
+        $expenseItc = (float) Expense::whereBetween('occurred_at', [$start, $end])
+            ->get()
+            ->sum(fn ($e) => (float) ($e->extracted_data['gst_amount'] ?? 0));
+
+        // ITC from payment gateway invoices (total_charges + gst_amount = GST on PG fees)
+        $pgItc = 0.0;
+        $pgInvoiceCount = 0;
+        if (Schema::hasTable('pg_invoices')) {
+            $pgRow = PgInvoice::query()
+                ->where(function ($q) use ($start, $end) {
+                    $q->where(function ($q2) use ($start, $end) {
+                        $q2->whereNotNull('period_start')
+                           ->whereNotNull('period_end')
+                           ->where('period_start', '<=', $end)
+                           ->where('period_end', '>=', $start);
+                    })->orWhere(function ($q2) use ($start, $end) {
+                        $q2->where(function ($q3) {
+                            $q3->whereNull('period_start')->orWhereNull('period_end');
+                        })->whereBetween('created_at', [$start, $end]);
+                    });
+                })
+                ->selectRaw('COALESCE(SUM(gst_amount),0) as gst, COUNT(*) as cnt')
+                ->first();
+
+            $pgItc = round((float) ($pgRow->gst ?? 0), 2);
+            $pgInvoiceCount = (int) ($pgRow->cnt ?? 0);
+        }
+
+        $totalItc = round($expenseItc + $pgItc, 2);
+        $net = round($outputGst - $totalItc, 2);
+
+        return [
+            'output_gst' => $outputGst,
+            'itc' => [
+                'from_expenses'    => round($expenseItc, 2),
+                'from_pg_invoices' => $pgItc,
+                'pg_invoice_count' => $pgInvoiceCount,
+                'total'            => $totalItc,
+            ],
+            'net_gst_payable' => $net,
+            'status' => $net > 0 ? 'payable' : ($net < 0 ? 'credit_carried_forward' : 'nil'),
+        ];
+    }
+
+    protected function emptyReconciliation(): array
+    {
+        return [
+            'output_gst' => 0,
+            'itc' => ['from_expenses' => 0, 'from_pg_invoices' => 0, 'pg_invoice_count' => 0, 'total' => 0],
+            'net_gst_payable' => 0,
+            'status' => 'nil',
+        ];
+    }
+
 
     protected function periodSummary(Carbon $start, Carbon $end): array
     {

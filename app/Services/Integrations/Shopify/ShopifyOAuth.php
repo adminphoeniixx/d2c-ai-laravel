@@ -33,6 +33,30 @@ class ShopifyOAuth
         );
     }
 
+    /**
+     * Request a token via the client_credentials grant — confirmed working
+     * for this Dev Dashboard app/store combination, even though it isn't
+     * covered in Shopify's published authorization-code-grant docs. No
+     * merchant authorization redirect is needed; the app's own client_id +
+     * client_secret are sufficient. Returns a token that expires in ~24h
+     * with NO refresh_token — it must be regenerated from scratch before
+     * each expiry, not refreshed.
+     */
+    public function requestClientCredentialsToken(string $shop, string $clientId, string $clientSecret): array
+    {
+        $response = Http::asForm()
+            ->acceptJson()
+            ->timeout(15)
+            ->post("https://{$shop}/admin/oauth/access_token", [
+                'grant_type'    => 'client_credentials',
+                'client_id'     => $clientId,
+                'client_secret' => $clientSecret,
+            ])
+            ->throw();
+
+        return $response->json();
+    }
+
     public function buildAuthorizeUrl(string $shop, string $state): string
     {
         // Use central (non-tenant) callback URL — Shopify doesn't support wildcards
@@ -61,6 +85,58 @@ class ShopifyOAuth
                 'client_id'     => $this->apiKey,
                 'client_secret' => $this->apiSecret,
                 'code'          => $code,
+                // Request an expiring offline token from the start so new
+                // connections never hit the non-expiring-token rejection.
+                'expiring'      => 1,
+            ])
+            ->throw();
+
+        return $response->json();
+    }
+
+    /**
+     * Exchange an existing non-expiring offline token for an expiring one.
+     * This is Shopify's documented, supported migration path — it accepts
+     * the old non-expiring token as input even when that same token has
+     * started being rejected by the regular REST/GraphQL Admin API.
+     *
+     * Returns ['access_token','expires_in','refresh_token','refresh_token_expires_in','scope'].
+     * This is a one-time, irreversible migration per shop: the original
+     * non-expiring token is revoked by Shopify once this succeeds.
+     */
+    public function migrateToExpiringToken(string $shop, string $nonExpiringToken): array
+    {
+        $response = Http::asForm()
+            ->acceptJson()
+            ->timeout(15)
+            ->post("https://{$shop}/admin/oauth/access_token", [
+                'client_id'              => $this->apiKey,
+                'client_secret'          => $this->apiSecret,
+                'grant_type'             => 'urn:ietf:params:oauth:grant-type:token-exchange',
+                'subject_token'          => $nonExpiringToken,
+                'subject_token_type'     => 'urn:shopify:params:oauth:token-type:offline-access-token',
+                'requested_token_type'   => 'urn:shopify:params:oauth:token-type:offline-access-token',
+                'expiring'               => 1,
+            ])
+            ->throw();
+
+        return $response->json();
+    }
+
+    /**
+     * Use a refresh token to obtain a new access token + refresh token pair.
+     * Returns the same shape as migrateToExpiringToken().
+     */
+    public function refreshExpiringToken(string $shop, string $refreshToken): array
+    {
+        $response = Http::asForm()
+            ->acceptJson()
+            ->timeout(15)
+            ->post("https://{$shop}/admin/oauth/access_token", [
+                'client_id'     => $this->apiKey,
+                'client_secret' => $this->apiSecret,
+                'grant_type'    => 'refresh_token',
+                'refresh_token' => $refreshToken,
             ])
             ->throw();
 
@@ -105,5 +181,35 @@ class ShopifyOAuth
             throw new \RuntimeException('State signature mismatch.');
         }
         return (string) $companyId;
+    }
+
+    /**
+     * Encode state for a fresh App Store install where no heyd2c company
+     * exists yet — prefixed so the callback can tell it apart from a
+     * normal "existing company connecting their store" state.
+     */
+    public function encodeInstallState(string $shop): string
+    {
+        $payload = 'install:'.$shop.'|'.Str::random(16);
+        $sig = hash_hmac('sha256', $payload, $this->apiSecret);
+        return rtrim(strtr(base64_encode($payload.'|'.$sig), '+/', '-_'), '=');
+    }
+
+    /**
+     * Returns the shop domain if this state was produced by
+     * encodeInstallState(), or null if it's a normal company state.
+     */
+    public function decodeInstallState(string $state): ?string
+    {
+        $decoded = base64_decode(strtr($state, '-_', '+/'), true);
+        if ($decoded === false || !str_starts_with($decoded, 'install:')) {
+            return null;
+        }
+        [$marker, $nonce, $sig] = explode('|', $decoded) + [null, null, null];
+        $expected = hash_hmac('sha256', "{$marker}|{$nonce}", $this->apiSecret);
+        if (! is_string($sig) || ! hash_equals($expected, $sig)) {
+            throw new \RuntimeException('State signature mismatch.');
+        }
+        return substr((string) $marker, strlen('install:'));
     }
 }

@@ -9,9 +9,32 @@ use Inertia\Inertia;
 
 class PaymentGatewayController extends Controller
 {
-    public function index(string $tenant)
+    public function index(string $tenant, \Illuminate\Http\Request $request)
     {
-        $invoices = PgInvoice::orderByDesc('created_at')->get();
+        $from = $request->query('from');
+        $to   = $request->query('to');
+
+        $query = PgInvoice::query();
+
+        if ($from && $to) {
+            $start = \Illuminate\Support\Carbon::parse($from)->startOfDay();
+            $end   = \Illuminate\Support\Carbon::parse($to)->endOfDay();
+
+            $query->where(function ($q) use ($start, $end) {
+                $q->where(function ($q2) use ($start, $end) {
+                    $q2->whereNotNull('period_start')
+                       ->whereNotNull('period_end')
+                       ->where('period_start', '<=', $end)
+                       ->where('period_end', '>=', $start);
+                })->orWhere(function ($q2) use ($start, $end) {
+                    $q2->where(function ($q3) {
+                        $q3->whereNull('period_start')->orWhereNull('period_end');
+                    })->whereBetween('created_at', [$start, $end]);
+                });
+            });
+        }
+
+        $invoices = $query->orderByDesc('created_at')->get();
 
         $summary = [
             'total_gross'   => (float) $invoices->sum('net_settled'),   // total invoiced amount
@@ -23,6 +46,10 @@ class PaymentGatewayController extends Controller
         return Inertia::render('Tenant/PaymentGateway/Index', [
             'invoices' => $invoices,
             'summary'  => $summary,
+            'filters'  => [
+                'from' => $from,
+                'to'   => $to,
+            ],
         ]);
     }
 

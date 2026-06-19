@@ -37,6 +37,7 @@ class IntegrationAccount extends Model
 
     public const MODE_OAUTH  = 'oauth';
     public const MODE_MANUAL = 'manual';
+    public const MODE_CLIENT_CREDENTIALS = 'client_credentials';
 
     public const STATUS_CONNECTED    = 'connected';
     public const STATUS_DISCONNECTED = 'disconnected';

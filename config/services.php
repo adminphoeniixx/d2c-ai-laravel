@@ -27,7 +27,7 @@ return [
     'shopify' => [
         'key'         => env('SHOPIFY_API_KEY'),
         'secret'      => env('SHOPIFY_API_SECRET'),
-        'scopes'      => env('SHOPIFY_SCOPES', 'read_orders,read_products,read_customers,read_inventory,write_orders'),
+        'scopes'      => env('SHOPIFY_SCOPES', 'read_orders,read_products,read_customers,read_inventory,write_orders,read_fulfillments'),
         'api_version' => env('SHOPIFY_API_VERSION', '2025-01'),
     ],
 

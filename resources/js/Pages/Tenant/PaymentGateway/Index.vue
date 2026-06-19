@@ -1,12 +1,13 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
-import { Upload, CreditCard, Trash2, CheckCircle, XCircle, Loader, Eye, X, FileText } from 'lucide-vue-next'
+import { Upload, CreditCard, Trash2, CheckCircle, XCircle, Loader, Eye, X, FileText, Calendar } from 'lucide-vue-next'
 import TenantLayout from '@/Layouts/TenantLayout.vue'
 
 const props = defineProps({
     invoices: { type: Array,  default: () => [] },
     summary:  { type: Object, default: () => ({}) },
+    filters:  { type: Object, default: () => ({ from: null, to: null }) },
 })
 
 const slug      = window.location.pathname.match(/\/app\/([^/]+)/)?.[1] || ''
@@ -14,6 +15,22 @@ const uploading = ref(false)
 const dragOver  = ref(false)
 const toast     = ref(null) // { type: 'success'|'error', message }
 const selected  = ref(null)
+
+const fromDate = ref(props.filters.from || '')
+const toDate   = ref(props.filters.to   || '')
+
+function applyDateFilter() {
+    router.get(`/app/${slug}/payment-gateway`, {
+        from: fromDate.value || undefined,
+        to:   toDate.value   || undefined,
+    }, { preserveState: true, preserveScroll: true })
+}
+
+function clearDateFilter() {
+    fromDate.value = ''
+    toDate.value = ''
+    router.get(`/app/${slug}/payment-gateway`, {}, { preserveState: true, preserveScroll: true })
+}
 
 const totalGross    = computed(() => props.summary.total_gross    ?? 0)
 const totalCharges  = computed(() => props.summary.total_charges  ?? 0)
@@ -104,6 +121,26 @@ const dateFmt = (d) => d ? new Date(d).toLocaleString('en-IN', { dateStyle: 'med
         </Transition>
 
         <h1 class="text-[20px] font-bold text-white">Payment Gateway</h1>
+
+        <!-- Date Filter -->
+        <div class="card">
+            <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                <div class="flex items-center gap-2">
+                    <Calendar :size="14" class="text-ink-3" />
+                    <span class="text-[12px] text-ink-3 font-mono">FROM</span>
+                    <input v-model="fromDate" type="date" class="heyd2c-input w-40 text-[12px]" @change="applyDateFilter" />
+                    <span class="text-[12px] text-ink-3 font-mono">TO</span>
+                    <input v-model="toDate" type="date" class="heyd2c-input w-40 text-[12px]" @change="applyDateFilter" />
+                </div>
+                <button v-if="fromDate || toDate" @click="clearDateFilter"
+                    class="px-2.5 py-1 text-[10px] font-mono rounded-full bg-bg-3 border border-frost-1 text-ink-3 hover:border-frost-3 hover:text-ink transition cursor-pointer">
+                    Clear Filter
+                </button>
+                <span v-if="fromDate || toDate" class="text-[11px] text-ink-3">
+                    Filtering by invoice billing period
+                </span>
+            </div>
+        </div>
 
         <!-- KPI Cards -->
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">

@@ -33,6 +33,8 @@ class ShopifyController extends Controller
                 'connected_at'   => $account->connected_at,
                 'last_synced_at' => $account->last_synced_at,
                 'scopes'         => $account->scopes,
+                'error_message'  => $account->error_message,
+                'has_refresh_token' => !empty($account->getCredential('refresh_token')),
             ] : null,
             'scopes' => explode(',', (string) config('services.shopify.scopes')),
         ]);
@@ -108,6 +110,62 @@ class ShopifyController extends Controller
         }
     }
 
+    /**
+     * Connect via client_credentials grant — for Dev Dashboard apps where
+     * a static token can't be pasted (legacy custom apps only) and the
+     * standard OAuth install redirect is blocked (e.g. app under review).
+     * Requests a fresh ~24h token immediately using client_id+client_secret;
+     * ShopifyClient will auto-regenerate it before each expiry.
+     */
+    public function connectClientCredentials(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'shop_domain'   => ['required', 'string', 'regex:/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i'],
+            'client_id'     => ['required', 'string'],
+            'client_secret' => ['required', 'string', 'starts_with:shpss_'],
+        ]);
+
+        $company = app('current_company');
+
+        try {
+            $data = $this->oauth->requestClientCredentialsToken(
+                $validated['shop_domain'],
+                $validated['client_id'],
+                $validated['client_secret'],
+            );
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Could not get a token: ' . $e->getMessage());
+        }
+
+        $credentials = [
+            'client_id'     => $validated['client_id'],
+            'client_secret' => $validated['client_secret'],
+            'access_token'  => $data['access_token'],
+        ];
+        if (isset($data['expires_in'])) {
+            $credentials['expires_at'] = now()->addSeconds((int) $data['expires_in'])->toIso8601String();
+        }
+
+        $account = IntegrationAccount::updateOrCreate(
+            ['company_id' => $company->id, 'provider' => IntegrationAccount::PROVIDER_SHOPIFY],
+            [
+                'mode'          => IntegrationAccount::MODE_CLIENT_CREDENTIALS,
+                'status'        => IntegrationAccount::STATUS_CONNECTED,
+                'shop_domain'   => $validated['shop_domain'],
+                'credentials'   => $credentials,
+                'scopes'        => explode(',', (string) ($data['scope'] ?? config('services.shopify.scopes'))),
+                'connected_at'  => now(),
+                'error_message' => null,
+            ]
+        );
+
+        $company->update(['shopify_connected_at' => now()]);
+
+        SyncShopifyOrders::dispatch($account->id, backfill: true)->onQueue('integrations');
+
+        return back()->with('success', 'Shopify connected via client credentials. Sync started.');
+    }
+
     /** Manual fallback: merchant pastes credentials directly. */
     public function manual(Request $request): RedirectResponse
     {
@@ -117,16 +175,44 @@ class ShopifyController extends Controller
         ]);
 
         $company = app('current_company');
+        $credentials = ['access_token' => $validated['access_token']];
+
+        // Shopify has started rejecting non-expiring tokens for some custom
+        // apps even though the documented policy exempts them. Rather than
+        // make the merchant deal with that, proactively try the documented
+        // migration to an expiring token right away — if it succeeds we
+        // store the expiring token + refresh token instead, and the client
+        // will auto-refresh from then on. If migration isn't needed/fails,
+        // we just fall back to the pasted token as-is.
+        try {
+            $migrated = $this->oauth->migrateToExpiringToken($validated['shop_domain'], $validated['access_token']);
+            if (!empty($migrated['access_token'])) {
+                $credentials['access_token'] = $migrated['access_token'];
+                if (!empty($migrated['refresh_token'])) {
+                    $credentials['refresh_token'] = $migrated['refresh_token'];
+                }
+                if (isset($migrated['expires_in'])) {
+                    $credentials['expires_at'] = now()->addSeconds((int) $migrated['expires_in'])->toIso8601String();
+                }
+                if (isset($migrated['refresh_token_expires_in'])) {
+                    $credentials['refresh_token_expires_at'] = now()->addSeconds((int) $migrated['refresh_token_expires_in'])->toIso8601String();
+                }
+            }
+        } catch (\Throwable $e) {
+            // Migration not needed, not supported for this shop/app combo,
+            // or the token was already expiring — keep the pasted token.
+        }
 
         $account = IntegrationAccount::updateOrCreate(
             ['company_id' => $company->id, 'provider' => IntegrationAccount::PROVIDER_SHOPIFY],
             [
-                'mode'         => IntegrationAccount::MODE_MANUAL,
-                'status'       => IntegrationAccount::STATUS_CONNECTED,
-                'shop_domain'  => $validated['shop_domain'],
-                'credentials'  => ['access_token' => $validated['access_token']],
-                'scopes'       => explode(',', (string) config('services.shopify.scopes')),
-                'connected_at' => now(),
+                'mode'          => IntegrationAccount::MODE_MANUAL,
+                'status'        => IntegrationAccount::STATUS_CONNECTED,
+                'shop_domain'   => $validated['shop_domain'],
+                'credentials'   => $credentials,
+                'scopes'        => explode(',', (string) config('services.shopify.scopes')),
+                'connected_at'  => now(),
+                'error_message' => null,
             ]
         );
 
@@ -135,6 +221,55 @@ class ShopifyController extends Controller
         SyncShopifyOrders::dispatch($account->id, backfill: true)->onQueue('integrations');
 
         return back()->with('success', 'Shopify connected via API token. Sync started.');
+    }
+
+    /**
+     * Attempt to migrate an already-connected account's non-expiring token
+     * to an expiring one. Useful when a store was connected before this
+     * migration logic existed, or when the earlier attempt failed.
+     */
+    public function migrateToken(Request $request): RedirectResponse
+    {
+        $company = app('current_company');
+        $account = IntegrationAccount::query()
+            ->where('company_id', $company->id)
+            ->where('provider', IntegrationAccount::PROVIDER_SHOPIFY)
+            ->first();
+
+        if (!$account) {
+            return back()->with('error', 'Shopify not connected.');
+        }
+
+        $currentToken = $account->getCredential('access_token');
+        if (empty($currentToken)) {
+            return back()->with('error', 'No access token found to migrate.');
+        }
+
+        try {
+            $migrated = $this->oauth->migrateToExpiringToken($account->shop_domain, $currentToken);
+
+            $credentials = $account->credentials ?? [];
+            $credentials['access_token'] = $migrated['access_token'];
+            if (!empty($migrated['refresh_token'])) {
+                $credentials['refresh_token'] = $migrated['refresh_token'];
+            }
+            if (isset($migrated['expires_in'])) {
+                $credentials['expires_at'] = now()->addSeconds((int) $migrated['expires_in'])->toIso8601String();
+            }
+            if (isset($migrated['refresh_token_expires_in'])) {
+                $credentials['refresh_token_expires_at'] = now()->addSeconds((int) $migrated['refresh_token_expires_in'])->toIso8601String();
+            }
+
+            $account->update([
+                'credentials'   => $credentials,
+                'status'        => IntegrationAccount::STATUS_CONNECTED,
+                'error_message' => null,
+            ]);
+
+            return back()->with('success', 'Token migrated to the expiring format. Sync should work now.');
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Migration failed: ' . $e->getMessage() . '. The token may already be expiring, or this shop/app combination may need a fresh manual token.');
+        }
     }
 
     public function disconnect(Request $request): RedirectResponse

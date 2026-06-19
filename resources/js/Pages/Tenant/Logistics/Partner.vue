@@ -19,7 +19,6 @@ const trackResult    = ref(null);
 const trackLoading   = ref(false);
 const trackAwb       = ref('');
 const syncing        = ref(false);
-const fetching       = ref(false);
 const importing      = ref(false);
 const importMessage  = ref('');
 const importError    = ref(false);
@@ -145,13 +144,7 @@ function syncTracking() {
     });
 }
 
-function fetchShipments() {
-    fetching.value = true;
-    router.post(route('tenant.logistics.fetch-shipments', { tenant: slug, partnerId: props.partner.id }), {}, {
-        preserveScroll: true,
-        onFinish: () => { fetching.value = false; },
-    });
-}
+
 
 async function trackSingle() {
     if (!trackAwb.value) return;
@@ -238,9 +231,10 @@ function deleteInvoice(inv) {
             </div>
             <div class="flex items-center gap-2">
                 <template v-if="partner.api_connected">
-                    <button @click="fetchShipments" :disabled="fetching" class="btn btn-primary btn-sm flex items-center gap-1 cursor-pointer">
-                        <RefreshCw :size="12" :class="fetching ? 'animate-spin' : ''" /> {{ fetching ? 'Fetching…' : 'Fetch Shipments' }}
-                    </button>
+                    <span class="text-[11px] text-ink-3 italic mr-1">
+                        Discovering new shipments by date isn't supported by Delhivery's API —
+                        upload a shipment CSV below to add AWBs, then Sync Status keeps them updated.
+                    </span>
                     <button @click="syncTracking" :disabled="syncing" class="btn btn-ghost btn-sm flex items-center gap-1 cursor-pointer">
                         <RefreshCw :size="12" :class="syncing ? 'animate-spin' : ''" /> {{ syncing ? 'Syncing…' : 'Sync Status' }}
                     </button>

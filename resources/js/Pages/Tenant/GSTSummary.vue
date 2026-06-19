@@ -1,7 +1,7 @@
 <script setup>
 import { Head, Link, router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
-import { Receipt, MapPin, Download, IndianRupee, Calendar, Filter } from 'lucide-vue-next';
+import { Receipt, MapPin, Download, IndianRupee, Calendar, Filter, Scale, ArrowDownCircle, ArrowUpCircle } from 'lucide-vue-next';
 import TenantLayout from '@/Layouts/TenantLayout.vue';
 import KpiCard from '@/Components/KpiCard.vue';
 
@@ -11,6 +11,12 @@ const props = defineProps({
     monthlySummary: { type: Array, default: () => [] },
     stateWise: { type: Array, default: () => [] },
     orders: { type: Array, default: () => [] },
+    reconciliation: { type: Object, default: () => ({
+        output_gst: 0,
+        itc: { from_expenses: 0, from_pg_invoices: 0, pg_invoice_count: 0, total: 0 },
+        net_gst_payable: 0,
+        status: 'nil',
+    }) },
     filters: { type: Object, default: () => ({ from: '', to: '' }) },
 });
 
@@ -72,6 +78,17 @@ function setPreset(preset) {
 function exportGstr1() {
     window.location.href = route('tenant.gst.export', { tenant: slug }) + '?from=' + fromDate.value + '&to=' + toDate.value;
 }
+
+const netGst = computed(() => props.reconciliation.net_gst_payable);
+const reconStatus = computed(() => {
+    if (props.reconciliation.status === 'payable') {
+        return { label: 'Net GST Payable', color: 'text-rose', icon: 'pay' };
+    }
+    if (props.reconciliation.status === 'credit_carried_forward') {
+        return { label: 'ITC Surplus (Carried Forward)', color: 'text-emerald', icon: 'credit' };
+    }
+    return { label: 'Net GST Payable', color: 'text-ink', icon: 'pay' };
+});
 </script>
 
 <template>
@@ -154,6 +171,56 @@ function exportGstr1() {
         <KpiCard label="SGST" :value="summary.sgst" format="currency" />
         <KpiCard label="IGST" :value="summary.igst" format="currency" />
         <KpiCard label="Total GST" :value="summary.total_gst" format="currency" />
+    </div>
+
+    <!-- GST Reconciliation -->
+    <div class="card mb-5">
+        <div class="flex items-center gap-2 mb-4">
+            <Scale :size="15" class="text-brand-400" />
+            <h3 class="text-[16px] font-bold text-white">GST Reconciliation</h3>
+            <span class="text-[11px] text-ink-3 font-mono">Output Tax vs Input Tax Credit</span>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <!-- Output GST -->
+            <div class="rounded-xl border border-frost-1 bg-surface-2 p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <ArrowUpCircle :size="14" class="text-rose-400" />
+                    <span class="text-[11px] font-mono uppercase tracking-wider text-ink-3">Output GST (Collected on Sales)</span>
+                </div>
+                <div class="text-[24px] font-bold text-white">{{ fmt(reconciliation.output_gst) }}</div>
+                <div class="text-[11px] text-ink-3 mt-1">{{ summary.order_count }} order{{ summary.order_count === 1 ? '' : 's' }} in period</div>
+            </div>
+
+            <!-- Input Tax Credit -->
+            <div class="rounded-xl border border-frost-1 bg-surface-2 p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <ArrowDownCircle :size="14" class="text-emerald-400" />
+                    <span class="text-[11px] font-mono uppercase tracking-wider text-ink-3">Input Tax Credit (ITC)</span>
+                </div>
+                <div class="text-[24px] font-bold text-white">{{ fmt(reconciliation.itc.total) }}</div>
+                <div class="text-[11px] text-ink-3 mt-1 space-y-0.5">
+                    <div>GST on expenses: {{ fmt(reconciliation.itc.from_expenses) }}</div>
+                    <div>GST on PG invoices: {{ fmt(reconciliation.itc.from_pg_invoices) }} ({{ reconciliation.itc.pg_invoice_count }} invoice{{ reconciliation.itc.pg_invoice_count === 1 ? '' : 's' }})</div>
+                </div>
+            </div>
+
+            <!-- Net -->
+            <div class="rounded-xl border border-frost-1 bg-surface-2 p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <Scale :size="14" class="text-brand-400" />
+                    <span class="text-[11px] font-mono uppercase tracking-wider text-ink-3">{{ reconStatus.label }}</span>
+                </div>
+                <div class="text-[24px] font-bold" :class="reconStatus.color">{{ fmt(Math.abs(netGst)) }}</div>
+                <div class="text-[11px] text-ink-3 mt-1">Output GST − ITC</div>
+            </div>
+        </div>
+
+        <p class="text-[11px] text-ink-3 mt-4 leading-relaxed">
+            ITC is auto-calculated from GST recorded on logged expenses and Payment Gateway invoices for this period.
+            If you have other GST-bearing purchases (e.g. ad agency invoices, software subscriptions), log them as
+            expenses with GST details to include them here.
+        </p>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">

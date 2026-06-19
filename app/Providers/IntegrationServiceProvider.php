@@ -12,10 +12,14 @@ class IntegrationServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {
-        // Log sync completions into integration_logs for the admin viewer
+        // Log sync completions into integration_logs for the admin viewer.
+        // integration_logs lives in the CENTRAL database, but this listener
+        // can fire while the tenant connection is active (sync jobs call
+        // tenancy()->initialize() first) — explicitly target the central
+        // connection so this never tries to write into a tenant schema.
         Event::listen(IntegrationSyncCompleted::class, function (IntegrationSyncCompleted $e) {
             try {
-                \DB::table('integration_logs')->insert([
+                \DB::connection('pgsql')->table('integration_logs')->insert([
                     'company_id' => $e->companyId,
                     'provider'   => $e->provider,
                     'event'      => 'sync.completed',

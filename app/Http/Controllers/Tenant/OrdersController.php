@@ -90,30 +90,48 @@ class OrdersController extends Controller
         }
 
         $beforeCount = Order::count();
+        $errors = [];
 
         foreach ($accounts as $account) {
             try {
                 $account->update(['status' => \App\Models\IntegrationAccount::STATUS_CONNECTED]);
 
+                // If this store has never successfully synced, do a full
+                // backfill instead of an incremental "since last sync" sync —
+                // otherwise orders placed before the connect timestamp are
+                // silently skipped forever.
+                $needsBackfill = $account->last_synced_at === null;
+
                 if ($account->provider === 'shopify') {
-                    \App\Jobs\Integrations\SyncShopifyOrders::dispatchSync($account->id, backfill: false);
+                    \App\Jobs\Integrations\SyncShopifyOrders::dispatchSync($account->id, backfill: $needsBackfill);
                 } elseif ($account->provider === 'woocommerce') {
-                    \App\Jobs\Integrations\SyncWooOrders::dispatchSync($account->id, backfill: false);
+                    \App\Jobs\Integrations\SyncWooOrders::dispatchSync($account->id, backfill: $needsBackfill);
+                }
+
+                $account->refresh();
+                if ($account->status === \App\Models\IntegrationAccount::STATUS_ERROR) {
+                    $errors[] = "{$account->provider}: " . ($account->error_message ?? 'sync failed');
                 }
             } catch (\Throwable $e) {
-                \Log::warning("Auto-sync failed for {$account->provider}", ['error' => $e->getMessage()]);
+                $errors[] = "{$account->provider}: " . $e->getMessage();
             }
         }
 
         $afterCount = Order::count();
         $newOrders = $afterCount - $beforeCount;
 
+        if (!empty($errors)) {
+            $message = 'Sync error — ' . implode('; ', $errors);
+        } elseif ($newOrders > 0) {
+            $message = "{$newOrders} new orders fetched successfully";
+        } else {
+            $message = 'No new orders found';
+        }
+
         return response()->json([
             'new_orders' => $newOrders,
             'total' => $afterCount,
-            'message' => $newOrders > 0
-                ? "{$newOrders} new orders fetched successfully"
-                : 'No new orders found',
+            'message' => $message,
         ]);
     }
 

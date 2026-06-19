@@ -151,11 +151,20 @@ Route::middleware(['auth', 'verified', 'tenant'])->group(function () {
     Route::get('/ai-insights',          [AiInsightsController::class, 'index'])->name('ai-insights');
     Route::post('/ai-insights/refresh', [AiInsightsController::class, 'refresh'])->name('ai-insights.refresh');
 
+    Route::prefix('saas-subscriptions')->name('saas-subscriptions.')->group(function () {
+        Route::get('/',        [\App\Http\Controllers\Tenant\SaasSubscriptionsController::class, 'index'])->name('index');
+        Route::post('/',       [\App\Http\Controllers\Tenant\SaasSubscriptionsController::class, 'store'])->name('store');
+        Route::put('/{id}',    [\App\Http\Controllers\Tenant\SaasSubscriptionsController::class, 'update'])->name('update');
+        Route::delete('/{id}', [\App\Http\Controllers\Tenant\SaasSubscriptionsController::class, 'destroy'])->name('destroy');
+    });
+
     Route::prefix('integrations')->name('integrations.')->group(function () {
         Route::get('/shopify',             [ShopifyController::class, 'show'])->name('shopify.show');
         Route::post('/shopify/connect',    [ShopifyController::class, 'connect'])->name('shopify.connect');
         Route::get('/shopify/callback',    [ShopifyController::class, 'callback'])->name('shopify.callback');
         Route::post('/shopify/manual',     [ShopifyController::class, 'manual'])->name('shopify.manual');
+        Route::post('/shopify/connect-client-credentials', [ShopifyController::class, 'connectClientCredentials'])->name('shopify.connect-client-credentials');
+        Route::post('/shopify/migrate-token', [ShopifyController::class, 'migrateToken'])->name('shopify.migrate-token');
         Route::post('/shopify/sync',       [ShopifyController::class, 'sync'])->name('shopify.sync');
         Route::delete('/shopify',          [ShopifyController::class, 'disconnect'])->name('shopify.disconnect');
         Route::get('/woo',                 [WooCommerceController::class, 'show'])->name('woo.show');

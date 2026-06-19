@@ -205,7 +205,7 @@ class CompanyController extends Controller
         session(['impersonator_id' => $request->user()->id]);
         auth()->login($target);
 
-        return redirect()->route('tenant.dashboard', ['tenant' => $company->slug]);
+        return redirect()->route('tenant.ai-insights', ['tenant' => $company->slug]);
     }
 
     public function stopImpersonating(Request $request): RedirectResponse

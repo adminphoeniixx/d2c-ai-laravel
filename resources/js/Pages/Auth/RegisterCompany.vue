@@ -53,7 +53,13 @@ async function sendOtp() {
     otpLoading.value = true;
     otpError.value = '';
     try {
-        const res = await fetch('/api/v1/auth/send-otp', {
+        // This is the registration page — always use the registration OTP
+        // endpoint directly. The previous logic tried the employee-login
+        // endpoint first and only fell back on an exact 404, which meant
+        // any other failure (422 validation, 500, etc.) from that unrelated
+        // endpoint surfaced as "Failed to send OTP" without ever attempting
+        // the correct registration endpoint.
+        const res = await fetch('/api/v1/register/send-otp', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
             body: JSON.stringify({ phone: phoneNumber.value }),
@@ -63,22 +69,6 @@ async function sendOtp() {
             otpSent.value = true;
             step.value = 2;
             startResendTimer();
-        } else if (res.status === 404) {
-            // Phone not found in employees — that's expected for registration
-            // Use the registration OTP endpoint instead
-            const regRes = await fetch('/api/v1/register/send-otp', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                body: JSON.stringify({ phone: phoneNumber.value }),
-            });
-            const regData = await regRes.json();
-            if (regRes.ok && regData.success) {
-                otpSent.value = true;
-                step.value = 2;
-                startResendTimer();
-            } else {
-                otpError.value = regData.error || 'Failed to send OTP';
-            }
         } else {
             otpError.value = data.error || 'Failed to send OTP';
         }

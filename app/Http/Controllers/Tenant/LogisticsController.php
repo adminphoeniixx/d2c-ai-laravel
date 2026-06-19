@@ -16,6 +16,10 @@ class LogisticsController extends Controller
     // ── Index: list all delivery partners
     public function index(Request $request)
     {
+        // Defensive seed for companies created without an explicit
+        // seeding step. Cheap — firstOrCreate per partner.
+        DeliveryPartner::seedDefaults();
+
         $partners = DeliveryPartner::withCount(['shipments', 'invoices'])
             ->orderBy('name')
             ->get()
@@ -270,14 +274,13 @@ class LogisticsController extends Controller
         return back();
     }
 
-    // ── Fetch ALL shipments from API (pulls last 90 days)
+    // ── Fetch ALL shipments from API by date range. Disabled: Delhivery's
+    // API has no endpoint to list/discover shipments — only to track AWBs
+    // you already know. Use CSV upload to bring AWBs in, then Sync Status
+    // keeps their tracking data current.
     public function fetchShipments(Request $request, $tenant, $partnerId)
     {
-        $partner = DeliveryPartner::findOrFail($partnerId);
-        if ($partner->slug === 'delhivery') {
-            return app(\App\Http\Controllers\Tenant\DelhiverySyncController::class)->fetchAll($request, $tenant);
-        }
-        return back();
+        return back()->withErrors(['fetch' => 'Discovering new shipments by date isn\'t supported by Delhivery\'s API. Upload a shipment CSV to add AWBs instead.']);
     }
 
     // ── Invoice detail page

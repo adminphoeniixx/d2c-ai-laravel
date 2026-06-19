@@ -57,11 +57,7 @@ class OtpLoginController extends Controller
         Cache::put("login_otp:{$phone}", $otp, now()->addMinutes(10));
         Cache::put("login_otp_attempts:{$phone}", 0, now()->addMinutes(10));
 
-        $sent = $this->msg91->sendOtp($phone, $otp);
-
-        if (!$sent) {
-            \Illuminate\Support\Facades\Log::info("OTP for {$phone}: {$otp}");
-        }
+        $this->msg91->sendOtp($phone, $otp);
 
         return back()->with('otp_sent', true);
     }
@@ -95,7 +91,7 @@ class OtpLoginController extends Controller
                 $request->session()->regenerate();
                 $company = $user->company;
                 if ($company) {
-                    return redirect()->route('tenant.dashboard', ['tenant' => $company->slug]);
+                    return redirect()->route('tenant.ai-insights', ['tenant' => $company->slug]);
                 }
                 return redirect()->intended('/');
             }
@@ -139,7 +135,7 @@ class OtpLoginController extends Controller
         // Redirect to their company dashboard
         $company = $user->company;
         if ($company) {
-            return redirect()->route('tenant.dashboard', ['tenant' => $company->slug]);
+            return redirect()->route('tenant.ai-insights', ['tenant' => $company->slug]);
         }
 
         return redirect()->intended(route('dashboard'));

@@ -2,7 +2,7 @@
 import { Link, router, usePage } from '@inertiajs/vue3';
 import { computed, onMounted, ref } from 'vue';
 import {
-    LayoutDashboard, FileText, Receipt, ShoppingBag, Megaphone, IndianRupee,
+    LayoutDashboard, FileText, Receipt, ShoppingBag, Store, Megaphone, IndianRupee,
     PackageSearch, Wallet, TrendingUp, Bot, Sparkles, ChevronDown, LogOut, User as UserIcon,
     Menu, X, RefreshCw, Plug, Settings as SettingsIcon, Users, FileSignature, ClipboardList,
     Clock, Truck, Building2, Boxes, HardHat, CalendarDays, CalendarCheck, AlertTriangle, Timer,
@@ -42,17 +42,25 @@ const lastSynced = ref('2 min ago');
 
 const nav = computed(() => ([
     {
-        label: 'OVERVIEW',
+        label: 'AI',
         items: [
+            { name: 'AI Insights',    icon: Sparkles,        href: route('tenant.ai-insights', { tenant: slug.value }), active: route().current('tenant.ai-insights') },
+            { name: 'AI Copilot',     icon: Bot,             href: route('tenant.ai', { tenant: slug.value }), active: route().current('tenant.ai') },
             { name: 'Analytics',      icon: LayoutDashboard, href: route('tenant.dashboard',  { tenant: slug.value }), active: route().current('tenant.dashboard') },
             { name: 'P&L Report',     icon: FileText,        href: route('tenant.pnl',        { tenant: slug.value }), active: route().current('tenant.pnl') },
-            { name: 'Expenses',       icon: Receipt,         href: route('tenant.expenses',   { tenant: slug.value }), active: route().current('tenant.expenses*') },
+            { name: 'GST Reports',    icon: IndianRupee,     href: route('tenant.gst', { tenant: slug.value }), active: route().current('tenant.gst*') },
+        ],
+    },
+    {
+        label: 'OVERVIEW',
+        items: [
+            { name: 'Daily Expenses', icon: Receipt,         href: route('tenant.expenses',   { tenant: slug.value }), active: route().current('tenant.expenses*') },
+            { name: 'Subscriptions',  icon: CreditCard,      href: route('tenant.saas-subscriptions.index', { tenant: slug.value }), active: route().current('tenant.saas-subscriptions*') },
             { name: 'Orders',         icon: ShoppingBag,     href: route('tenant.orders',     { tenant: slug.value }), active: route().current('tenant.orders*') },
             { name: 'Ad Analytics',   icon: Megaphone,       href: route('tenant.ads',        { tenant: slug.value }), active: route().current('tenant.ads') },
             { name: 'Payment Gateway',icon: CreditCard,      href: route('tenant.pg.index',   { tenant: slug.value }), active: route().current('tenant.pg*') },
             { name: 'Logistics',      icon: Truck,           href: route('tenant.logistics.index', { tenant: slug.value }), active: route().current('tenant.logistics*') },
             { name: 'Banking',        icon: Landmark,        href: route('tenant.banking.index', { tenant: slug.value }), active: route().current('tenant.banking*') },
-            { name: 'GST Reports',    icon: IndianRupee,     href: route('tenant.gst', { tenant: slug.value }), active: route().current('tenant.gst*') },
         ],
     },
     {
@@ -77,14 +85,8 @@ const nav = computed(() => ([
             { name: 'Inventory',        icon: Boxes,          href: route('tenant.inventory-mgmt.index',   { tenant: slug.value }), active: route().current('tenant.inventory-mgmt*') },
             { name: 'Purchase Orders',  icon: Truck,          href: route('tenant.purchase-orders.index',  { tenant: slug.value }), active: route().current('tenant.purchase-orders*') },
             { name: 'Vendors',          icon: Building2,      href: route('tenant.vendors.index',          { tenant: slug.value }), active: route().current('tenant.vendors*') },
+            { name: 'Marketplaces',     icon: Store,          href: route('tenant.marketplaces.index',     { tenant: slug.value }), active: route().current('tenant.marketplaces*') },
             { name: 'Daily Exchange', icon: TrendingUp,     href: route('tenant.cashflow',               { tenant: slug.value }), active: route().current('tenant.cashflow') },
-        ],
-    },
-    {
-        label: 'AI',
-        items: [
-            { name: 'AI Copilot',  icon: Bot,      href: route('tenant.ai', { tenant: slug.value }), active: route().current('tenant.ai') },
-            { name: 'AI Insights', icon: Sparkles, href: route('tenant.ai-insights', { tenant: slug.value }), active: route().current('tenant.ai-insights') },
         ],
     },
     {
@@ -138,8 +140,10 @@ function syncNow() {
 const pageTitle = computed(() => {
     if (route().current('tenant.dashboard')) return 'Insights';
     if (route().current('tenant.pnl'))       return 'P&L Report';
-    if (route().current('tenant.expenses'))  return 'Expenses';
+    if (route().current('tenant.expenses'))  return 'Daily Expenses';
+    if (route().current('tenant.saas-subscriptions*')) return 'SaaS Subscriptions';
     if (route().current('tenant.orders'))    return 'Orders';
+    if (route().current('tenant.marketplaces*')) return 'Marketplaces';
     if (route().current('tenant.ads'))       return 'Ad Analytics';
     if (route().current('tenant.inventory')) return 'Inventory Forecast';
     if (route().current('tenant.payroll'))   return 'Payroll Intelligence';

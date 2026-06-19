@@ -214,7 +214,12 @@ class AuthController extends Controller
         try {
             $smsSent = (new \App\Services\Msg91Service())->sendOtp($phone, $otp);
         } catch (\Throwable $e) {
-            Log::error('Registration OTP failed', ['error' => $e->getMessage()]);
+            try {
+                Log::error('Registration OTP failed', ['error' => $e->getMessage()]);
+            } catch (\Throwable) {
+                // Logging itself can fail (e.g. storage permission issues) —
+                // never let that mask the original OTP failure.
+            }
         }
 
         return response()->json([

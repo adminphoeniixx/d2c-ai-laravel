@@ -18,6 +18,8 @@ class ShopifyClient
 
     public function __construct(protected IntegrationAccount $account)
     {
+        $this->ensureFreshToken();
+
         $this->accessToken = (string) $this->account->getCredential('access_token');
 
         if (empty($this->accessToken)) {
@@ -26,6 +28,82 @@ class ShopifyClient
                 'error_message' => 'Credentials could not be decrypted. This usually happens when APP_KEY changes. Please disconnect and reconnect Shopify.',
             ]);
             throw new \RuntimeException('Shopify credentials invalid or corrupted. Please reconnect your store in Settings → Integrations → Shopify.');
+        }
+    }
+
+    /**
+     * Keep the access token fresh before each request:
+     *  - client_credentials mode: no refresh_token exists at all — must
+     *    regenerate a brand new token from client_id+client_secret before
+     *    the ~24h expiry, since this grant type doesn't support refreshing.
+     *  - expiring offline token mode: has a refresh_token — refresh
+     *    proactively within 2 minutes of the (much shorter, ~60min) expiry.
+     *  - non-expiring legacy token: neither field present — nothing to do.
+     */
+    protected function ensureFreshToken(): void
+    {
+        if ($this->account->mode === IntegrationAccount::MODE_CLIENT_CREDENTIALS) {
+            $expiresAt = $this->account->getCredential('expires_at');
+            $isExpiringSoon = !$expiresAt || now()->addMinutes(5)->gte(\Illuminate\Support\Carbon::parse($expiresAt));
+            if ($isExpiringSoon) {
+                $this->regenerateClientCredentialsToken();
+            }
+            return;
+        }
+
+        $refreshToken = $this->account->getCredential('refresh_token');
+        if (!$refreshToken) {
+            return; // non-expiring token (or OAuth token without rotation) — nothing to do
+        }
+
+        $expiresAt = $this->account->getCredential('expires_at');
+        $isExpiringSoon = !$expiresAt || now()->addMinutes(2)->gte(\Illuminate\Support\Carbon::parse($expiresAt));
+
+        if ($isExpiringSoon) {
+            $this->refreshToken();
+        }
+    }
+
+    /**
+     * Regenerate a fresh client_credentials token. Unlike refresh_token
+     * exchange, this calls the same endpoint from scratch using the
+     * stored client_id/client_secret — there's no rotation/refresh token
+     * involved in this grant type.
+     */
+    protected function regenerateClientCredentialsToken(): bool
+    {
+        $clientId = $this->account->getCredential('client_id');
+        $clientSecret = $this->account->getCredential('client_secret');
+
+        if (!$clientId || !$clientSecret) {
+            $this->account->update([
+                'status' => IntegrationAccount::STATUS_ERROR,
+                'error_message' => 'Missing client_id/client_secret for client_credentials mode. Please reconnect.',
+            ]);
+            return false;
+        }
+
+        try {
+            $oauth = ShopifyOAuth::make();
+            $data = $oauth->requestClientCredentialsToken($this->account->shop_domain, $clientId, $clientSecret);
+
+            $credentials = $this->account->credentials ?? [];
+            $credentials['access_token'] = $data['access_token'];
+            if (isset($data['expires_in'])) {
+                $credentials['expires_at'] = now()->addSeconds((int) $data['expires_in'])->toIso8601String();
+            }
+
+            $this->account->update(['credentials' => $credentials, 'status' => IntegrationAccount::STATUS_CONNECTED, 'error_message' => null]);
+            $this->account->refresh();
+            $this->accessToken = (string) $this->account->getCredential('access_token');
+
+            return true;
+        } catch (\Throwable $e) {
+            $this->account->update([
+                'status' => IntegrationAccount::STATUS_ERROR,
+                'error_message' => 'Shopify token regeneration failed: ' . $e->getMessage(),
+            ]);
+            return false;
         }
     }
 
@@ -40,11 +118,17 @@ class ShopifyClient
             ])
             ->timeout(30)
             ->retry(3, 1000, function ($exception, $request) {
-                // On 403, try to refresh the token
-                if ($exception instanceof \Illuminate\Http\Client\RequestException && $exception->response->status() === 403) {
-                    if ($this->refreshToken()) {
+                // On 403/401, try to get a fresh token
+                if ($exception instanceof \Illuminate\Http\Client\RequestException
+                    && in_array($exception->response->status(), [401, 403], true)) {
+                    $refreshed = $this->account->mode === IntegrationAccount::MODE_CLIENT_CREDENTIALS
+                        ? $this->regenerateClientCredentialsToken()
+                        : $this->refreshToken();
+
+                    if ($refreshed) {
+                        $this->accessToken = (string) $this->account->getCredential('access_token');
                         $request->withHeaders([
-                            'X-Shopify-Access-Token' => $this->account->getCredential('access_token'),
+                            'X-Shopify-Access-Token' => $this->accessToken,
                         ]);
                         return true;
                     }
@@ -55,7 +139,9 @@ class ShopifyClient
     }
 
     /**
-     * Refresh the OAuth token using the refresh_token.
+     * Refresh the expiring offline token using its refresh_token.
+     * Stores the new access token, new refresh token, and both
+     * expiry timestamps — Shopify rotates the refresh token on every use.
      */
     protected function refreshToken(): bool
     {
@@ -65,34 +151,46 @@ class ShopifyClient
         }
 
         try {
-            $response = Http::asJson()
-                ->acceptJson()
-                ->timeout(15)
-                ->post("https://{$this->account->shop_domain}/admin/oauth/access_token", [
-                    'client_id'     => config('services.shopify.key'),
-                    'client_secret' => config('services.shopify.secret'),
-                    'grant_type'    => 'refresh_token',
-                    'refresh_token' => $refreshToken,
-                ])
-                ->throw();
+            $oauth = ShopifyOAuth::make();
+            $data = $oauth->refreshExpiringToken($this->account->shop_domain, $refreshToken);
 
-            $data = $response->json();
-
-            // Update stored credentials
-            $credentials = $this->account->credentials;
-            $credentials['access_token'] = $data['access_token'];
-            if (!empty($data['refresh_token'])) {
-                $credentials['refresh_token'] = $data['refresh_token'];
-            }
-            $credentials['expires_in'] = $data['expires_in'] ?? null;
-
-            $this->account->update(['credentials' => $credentials, 'status' => IntegrationAccount::STATUS_CONNECTED]);
-            $this->account->refresh();
+            $this->storeTokenResponse($data);
 
             return true;
         } catch (\Throwable $e) {
+            // If the refresh token itself has expired (90-day window passed,
+            // or app reinstalled), the merchant needs to reconnect — surface
+            // that clearly rather than silently failing sync after sync.
+            $this->account->update([
+                'status' => IntegrationAccount::STATUS_ERROR,
+                'error_message' => 'Shopify token refresh failed: ' . $e->getMessage() . '. Please reconnect your store.',
+            ]);
             return false;
         }
+    }
+
+    /**
+     * Persist an access_token/refresh_token response from Shopify
+     * (used by both refresh and the one-time migration to expiring tokens).
+     */
+    public function storeTokenResponse(array $data): void
+    {
+        $credentials = $this->account->credentials ?? [];
+        $credentials['access_token'] = $data['access_token'];
+
+        if (!empty($data['refresh_token'])) {
+            $credentials['refresh_token'] = $data['refresh_token'];
+        }
+        if (isset($data['expires_in'])) {
+            $credentials['expires_at'] = now()->addSeconds((int) $data['expires_in'])->toIso8601String();
+        }
+        if (isset($data['refresh_token_expires_in'])) {
+            $credentials['refresh_token_expires_at'] = now()->addSeconds((int) $data['refresh_token_expires_in'])->toIso8601String();
+        }
+
+        $this->account->update(['credentials' => $credentials, 'status' => IntegrationAccount::STATUS_CONNECTED, 'error_message' => null]);
+        $this->account->refresh();
+        $this->accessToken = (string) $this->account->getCredential('access_token');
     }
 
     /**

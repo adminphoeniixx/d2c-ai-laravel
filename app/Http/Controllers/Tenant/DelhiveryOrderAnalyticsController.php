@@ -31,11 +31,6 @@ class DelhiveryOrderAnalyticsController extends Controller
         if ($from) $base->where('placed_at', '>=', $from);
         if ($to)   $base->where('placed_at', '<=', $to . ' 23:59:59');
 
-        $orders = $base->get([
-            'id', 'status', 'total_amount', 'placed_at',
-            'customer_name', 'shipping_address', 'raw_payload',
-        ]);
-
         $statusCounts  = [];
         $codTotal      = 0;
         $prepaidTotal  = 0;
@@ -50,21 +45,33 @@ class DelhiveryOrderAnalyticsController extends Controller
         $stateCounts   = [];
         $monthlyCounts = [];
         $codAtRisk     = 0;
+        $codRtoCount   = 0;
+        $total         = 0;
+
+        $base->select([
+            'id', 'provider', 'status', 'fulfillment_status', 'total_amount', 'placed_at',
+            'customer_name', 'shipping_address', 'raw_payload',
+        ])->chunkById(500, function ($orders) use (
+            &$statusCounts, &$codTotal, &$prepaidTotal, &$codCount, &$prepaidCount,
+            &$rtoCount, &$deliveredCount, &$inTransitCount, &$ofdCount, &$pendingCount,
+            &$pincodeCounts, &$stateCounts, &$monthlyCounts, &$codAtRisk, &$codRtoCount, &$total
+        ) {
 
         foreach ($orders as $order) {
+            $total++;
             $raw = is_array($order->raw_payload)
                 ? $order->raw_payload
                 : json_decode($order->raw_payload, true);
 
-            $note        = strtoupper(trim($raw['customer_note'] ?? ''));
-            $payMethod   = $raw['payment_method'] ?? '';
-            $isCod       = $payMethod === 'cod' || str_contains(strtolower($payMethod), 'cash');
+            $fields      = $this->extractOrderFields($order, $raw);
+            $note        = $fields['note'];
+            $isCod       = $fields['is_cod'];
             $amount      = (float) ($order->total_amount ?? 0);
-            $shipPostcode= $raw['shipping']['postcode'] ?? $raw['billing']['postcode'] ?? null;
-            $shipState   = $raw['shipping']['state'] ?? $raw['billing']['state'] ?? null;
+            $shipPostcode= $fields['postcode'];
+            $shipState   = $fields['state'];
             $month       = $order->placed_at ? \Carbon\Carbon::parse($order->placed_at)->format('Y-m') : null;
 
-            $deliveryStatus = $this->normalizeNote($note, $order->status);
+            $deliveryStatus = $this->normalizeNote($note, $order->provider, $order->status, $order->fulfillment_status);
             $statusCounts[$deliveryStatus] = ($statusCounts[$deliveryStatus] ?? 0) + 1;
 
             if ($deliveryStatus === 'Delivered')                         $deliveredCount++;
@@ -78,6 +85,9 @@ class DelhiveryOrderAnalyticsController extends Controller
                 $codTotal += $amount;
                 if (!in_array($deliveryStatus, ['Delivered', 'RTO', 'RTO Initiated'])) {
                     $codAtRisk += $amount;
+                }
+                if (in_array($deliveryStatus, ['RTO', 'RTO Initiated'])) {
+                    $codRtoCount++;
                 }
             } else {
                 $prepaidCount++;
@@ -110,8 +120,7 @@ class DelhiveryOrderAnalyticsController extends Controller
                 if ($isCod) $monthlyCounts[$month]['cod']++;
             }
         }
-
-        $total = $orders->count();
+        });
 
         arsort($pincodeCounts);
         $topPincodes = array_values(array_slice(array_map(
@@ -151,14 +160,6 @@ class DelhiveryOrderAnalyticsController extends Controller
             fn($s, $c) => ['status' => $s, 'count' => $c],
             array_keys($statusCounts), $statusCounts));
 
-        $codRtoCount = $orders->filter(function($o) {
-            $raw = is_array($o->raw_payload) ? $o->raw_payload : json_decode($o->raw_payload, true);
-            $payMethod = $raw['payment_method'] ?? '';
-            $isCod = $payMethod === 'cod' || str_contains(strtolower($payMethod), 'cash');
-            $note  = strtoupper(trim($raw['customer_note'] ?? ''));
-            return $isCod && in_array($this->normalizeNote($note, $o->status), ['RTO', 'RTO Initiated']);
-        })->count();
-
         return response()->json([
             'total'            => $total,
             'delivered'        => $deliveredCount,
@@ -182,11 +183,67 @@ class DelhiveryOrderAnalyticsController extends Controller
         ]);
     }
 
-    private function normalizeNote(string $note, string $orderStatus): string
+    /**
+     * WooCommerce and Shopify use completely different JSON shapes for the
+     * same logical data — orders from both land in raw_payload as-is from
+     * each platform's own API, so every field name needs a provider branch:
+     *   - note:     WooCommerce "customer_note"      vs Shopify "note"
+     *   - payment:  WooCommerce "payment_method"=cod  vs Shopify "gateway"/
+     *               "payment_gateway_names" (COD gateways are typically
+     *               named things like "Cash on Delivery (COD)")
+     *   - address:  WooCommerce "shipping.postcode"/"state" vs Shopify
+     *               "shipping_address.zip"/"province" (falls back to
+     *               billing_address the same way WooCommerce falls back
+     *               to billing)
+     */
+    private function extractOrderFields($order, ?array $raw): array
     {
+        if ($order->provider === 'shopify') {
+            $note      = strtoupper(trim($raw['note'] ?? ''));
+            $gateways  = $raw['payment_gateway_names'] ?? [];
+            $gatewayStr= is_array($gateways) ? implode(' ', $gateways) : (string) ($raw['gateway'] ?? '');
+            $isCod     = str_contains(strtolower($gatewayStr), 'cod')
+                || str_contains(strtolower($gatewayStr), 'cash on delivery')
+                || str_contains(strtolower($gatewayStr), 'cash');
+            $postcode  = $raw['shipping_address']['zip'] ?? $raw['billing_address']['zip'] ?? null;
+            $state     = $raw['shipping_address']['province'] ?? $raw['billing_address']['province'] ?? null;
+        } else {
+            // woocommerce (default — also covers any future provider
+            // that happens to share this shape, e.g. a WooCommerce-style
+            // CSV import)
+            $note      = strtoupper(trim($raw['customer_note'] ?? ''));
+            $payMethod = $raw['payment_method'] ?? '';
+            $isCod     = $payMethod === 'cod' || str_contains(strtolower($payMethod), 'cash');
+            $postcode  = $raw['shipping']['postcode'] ?? $raw['billing']['postcode'] ?? null;
+            $state     = $raw['shipping']['state'] ?? $raw['billing']['state'] ?? null;
+        }
+
+        return ['note' => $note, 'is_cod' => $isCod, 'postcode' => $postcode, 'state' => $state];
+    }
+
+    private function normalizeNote(string $note, string $provider, string $orderStatus, ?string $fulfillmentStatus): string
+    {
+        // Direct match on the note field always takes priority when present —
+        // Delhivery (or any courier integration) writing real delivery status
+        // into the note is more reliable than either platform's own status.
         foreach (self::STATUS_MAP as $key => $normalized) {
             if (str_contains($note, $key)) return $normalized;
         }
+
+        if ($provider === 'shopify') {
+            // Shopify has no single "status" — financial_status (paid/refunded/
+            // voided) and fulfillment_status (fulfilled/partial/null) are
+            // separate axes. orders.status is synced from financial_status.
+            return match(true) {
+                $fulfillmentStatus === 'fulfilled'        => 'Delivered',
+                $orderStatus === 'voided'                  => 'Cancelled',
+                $orderStatus === 'refunded'                => 'Refunded',
+                $fulfillmentStatus === 'partial'           => 'In Transit',
+                default                                     => 'Pending',
+            };
+        }
+
+        // woocommerce
         return match($orderStatus) {
             'completed'  => 'Delivered',
             'cancelled'  => 'Cancelled',

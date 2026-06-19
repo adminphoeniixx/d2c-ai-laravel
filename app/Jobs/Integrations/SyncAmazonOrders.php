@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Jobs\Integrations;
 
+use App\Models\Company;
 use App\Models\Tenant\MarketplaceCredential;
 use App\Models\Tenant\Order;
 use App\Services\Marketplaces\AmazonClient;
@@ -25,12 +26,22 @@ class SyncAmazonOrders implements ShouldQueue
 
     public function handle(): void
     {
-        \DB::connection('tenant')->statement("SET search_path TO \"{$this->schema}\", public");
+        $companyId = str_starts_with($this->schema, 'tenant_')
+            ? substr($this->schema, strlen('tenant_'))
+            : $this->schema;
 
-        $cred = MarketplaceCredential::where('marketplace', 'amazon')->where('status', 'connected')->first();
-        if (!$cred) return;
+        $company = Company::find($companyId);
+        if (!$company) {
+            Log::error('Amazon sync: company not found', ['schema' => $this->schema]);
+            return;
+        }
+
+        tenancy()->initialize($company);
 
         try {
+            $cred = MarketplaceCredential::where('marketplace', 'amazon')->where('status', 'connected')->first();
+            if (!$cred) return;
+
             $client = new AmazonClient($cred->getDecryptedCredentials());
             $sinceDate = $this->sinceDate ?? now()->subDays(7)->toIso8601String();
 
@@ -61,11 +72,11 @@ class SyncAmazonOrders implements ShouldQueue
             Log::info("Amazon sync complete: {$imported} orders", ['schema' => $this->schema]);
 
         } catch (\Throwable $e) {
-            $cred->update(['last_error' => $e->getMessage()]);
+            MarketplaceCredential::where('marketplace', 'amazon')->update(['last_error' => $e->getMessage()]);
             Log::error('Amazon sync failed', ['error' => $e->getMessage(), 'schema' => $this->schema]);
             throw $e;
+        } finally {
+            tenancy()->end();
         }
-
-        \DB::connection('tenant')->statement("SET search_path TO public");
     }
 }
