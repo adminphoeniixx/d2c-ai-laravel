@@ -1,7 +1,7 @@
 <script setup>
-import { Head } from '@inertiajs/vue3';
+import { Head, router } from '@inertiajs/vue3';
 import { Mic } from 'lucide-vue-next';
-import { ref } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import TenantLayout from '@/Layouts/TenantLayout.vue';
 import KpiCard from '@/Components/KpiCard.vue';
 import RevenueChart from '@/Components/RevenueChart.vue';
@@ -17,6 +17,38 @@ const profit  = props.kpis.find(k => k.key === 'profit')?.value ?? 0;
 const margin  = revenue > 0 ? Math.round((profit / revenue) * 100) : 0;
 
 const voiceModalOpen = ref(false);
+
+// Auto-refresh dashboard every 5 minutes so KPIs stay current as
+// background syncs complete. Also listen for the sync.completed
+// broadcast (fired by Shopify/Woo sync jobs) to refresh immediately
+// when new orders arrive, without waiting for the interval.
+let refreshTimer = null;
+let syncChannel = null;
+
+onMounted(() => {
+    refreshTimer = setInterval(() => {
+        router.reload({ only: ['kpis', 'revenueLine', 'orderMetrics'], preserveScroll: true });
+    }, 5 * 60 * 1000); // 5 minutes
+
+    // Listen for sync completed broadcasts if Echo is available
+    if (window.Echo) {
+        const slug = window.location.pathname.match(/\/app\/([^/]+)/)?.[1];
+        if (slug) {
+            // The company ID is embedded in the channel name used by sync jobs
+            syncChannel = window.Echo.private(`company.${slug}`);
+            if (syncChannel) {
+                syncChannel.listen('sync.completed', () => {
+                    router.reload({ only: ['kpis', 'revenueLine', 'orderMetrics'], preserveScroll: true });
+                });
+            }
+        }
+    }
+});
+
+onUnmounted(() => {
+    if (refreshTimer) clearInterval(refreshTimer);
+    if (syncChannel) syncChannel.stopListening('sync.completed');
+});
 </script>
 
 <template>

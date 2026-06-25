@@ -137,9 +137,10 @@ const providerMap = {
     woocommerce: { class: 'bg-brand-600/10 text-brand-300', label: 'WooCommerce' },
 };
 const ranges = [
-    { key: 'today', label: 'Today' },
-    { key: 'week', label: 'This Week' },
-    { key: 'month', label: 'This Month' },
+    { key: 'today',     label: 'Today' },
+    { key: 'yesterday', label: 'Yesterday' },
+    { key: 'week',      label: 'This Week' },
+    { key: 'month',     label: 'This Month' },
     { key: '3months', label: '3 Months' },
     { key: '6months', label: '6 Months' },
     { key: 'year', label: 'This Year' },
@@ -221,9 +222,25 @@ const dateFmt = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-dig
         </div>
     </div>
 
-    <!-- Status tiles -->
+    <!-- Fulfillment tiles -->
+    <div class="grid grid-cols-2 gap-3 mb-3">
+        <button @click="filterStatus('fulfilled')"
+            class="rounded-xl bg-bg-2 border px-4 py-3 text-center cursor-pointer hover:border-brand-600/40 transition"
+            :class="activeStatus === 'fulfilled' ? 'border-emerald-500/60 bg-emerald-500/5' : 'border-frost-1'">
+            <div class="text-[24px] font-bold text-emerald-400">{{ totals.fulfilled || 0 }}</div>
+            <div class="text-[11px] text-ink-3 uppercase tracking-wider mt-0.5">Fulfilled</div>
+        </button>
+        <button @click="filterStatus('unfulfilled')"
+            class="rounded-xl bg-bg-2 border px-4 py-3 text-center cursor-pointer hover:border-brand-600/40 transition"
+            :class="activeStatus === 'unfulfilled' ? 'border-amber-500/60 bg-amber-500/5' : 'border-frost-1'">
+            <div class="text-[24px] font-bold text-amber-400">{{ totals.unfulfilled || 0 }}</div>
+            <div class="text-[11px] text-ink-3 uppercase tracking-wider mt-0.5">Unfulfilled</div>
+        </button>
+    </div>
+
+    <!-- Status small boxes -->
     <div class="grid grid-cols-3 sm:grid-cols-7 gap-2 mb-5">
-        <button v-for="s in [{k:'paid',c:'text-emerald-400'},{k:'fulfilled',c:'text-emerald-400'},{k:'pending',c:'text-amber-400'},{k:'cancelled',c:'text-rose-400'},{k:'refunded',c:'text-rose-400'},{k:'failed',c:'text-rose-400'},{k:'on_hold',c:'text-orange-400'}]"
+        <button v-for="s in [{k:'paid',c:'text-emerald-400'},{k:'pending',c:'text-amber-400'},{k:'cancelled',c:'text-rose-400'},{k:'refunded',c:'text-rose-400'},{k:'failed',c:'text-rose-400'},{k:'on_hold',c:'text-orange-400'}]"
             :key="s.k" @click="filterStatus(s.k)" class="rounded-xl bg-bg-2 border border-frost-1 px-2 py-2 text-center cursor-pointer hover:border-brand-600/40 transition"
             :class="activeStatus === s.k ? 'border-brand-600/60' : ''">
             <div class="text-[14px] font-bold" :class="s.c">{{ totals[s.k] || 0 }}</div>
@@ -239,7 +256,7 @@ const dateFmt = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-dig
                 <input v-model="q" placeholder="Search orders, customers…" class="heyd2c-input pl-9 text-[12px]" />
             </div>
             <div class="flex items-center gap-1 flex-wrap">
-                <button v-for="s in ['all','paid','fulfilled','pending','cancelled','refunded','failed']" :key="s"
+                <button v-for="s in ['all','paid','fulfilled','unfulfilled','pending','cancelled','refunded','failed']" :key="s"
                     @click="filterStatus(s)" class="px-2.5 py-1 text-[11px] font-mono rounded-full transition cursor-pointer"
                     :class="activeStatus === s ? 'bg-brand-600/20 text-brand-300' : 'text-ink-3 hover:text-ink'">{{ s }}</button>
                 <span class="text-frost-2 mx-1">|</span>
@@ -257,6 +274,8 @@ const dateFmt = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-dig
                         <th class="text-left px-3 py-3">Order</th>
                         <th class="text-left px-3 py-3">Customer</th>
                         <th class="text-left px-3 py-3">Status</th>
+                        <th class="text-left px-3 py-3">Fulfillment</th>
+                        <th class="text-left px-3 py-3">Delivery</th>
                         <th class="text-left px-3 py-3">Source</th>
                         <th class="text-right px-3 py-3">Items</th>
                         <th class="text-right px-3 py-3">Discount</th>
@@ -276,6 +295,25 @@ const dateFmt = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-dig
                             <div class="text-[11px] text-ink-3">{{ o.customer_email }}</div>
                         </td>
                         <td class="px-3 py-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold" :class="statusMap[o.status]?.class || 'bg-ink-3/15 text-ink-3'">{{ statusMap[o.status]?.label || o.status }}</span></td>
+                        <td class="px-3 py-3">
+                            <span v-if="o.fulfillment_status" class="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                                :class="o.fulfillment_status === 'fulfilled' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400'">
+                                {{ o.fulfillment_status }}
+                            </span>
+                            <span v-else class="text-[11px] text-ink-3">unfulfilled</span>
+                        </td>
+                        <td class="px-3 py-3">
+                            <span v-if="o.delivery_status" class="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                                :class="{
+                                    'bg-emerald-500/15 text-emerald-400': o.delivery_status === 'Delivered',
+                                    'bg-rose-500/15 text-rose-400': o.delivery_status === 'Failed',
+                                    'bg-blue-500/15 text-blue-400': o.delivery_status === 'In Transit',
+                                    'bg-purple-500/15 text-purple-400': o.delivery_status === 'Out for Delivery',
+                                    'bg-amber-500/15 text-amber-400': o.delivery_status === 'Attempted',
+                                    'bg-ink-3/15 text-ink-3': !['Delivered','Failed','In Transit','Out for Delivery','Attempted'].includes(o.delivery_status),
+                                }">{{ o.delivery_status }}</span>
+                            <span v-else class="text-[11px] text-ink-3">—</span>
+                        </td>
                         <td class="px-3 py-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold" :class="providerMap[o.provider]?.class || ''">{{ providerMap[o.provider]?.label || o.provider }}</span></td>
                         <td class="px-3 py-3 text-right font-mono text-ink-2">{{ o.line_item_count }}</td>
                         <td class="px-3 py-3 text-right font-mono" :class="parseFloat(o.total_discount) > 0 ? 'text-amber-400' : 'text-ink-3'">{{ parseFloat(o.total_discount) > 0 ? fmt(o.total_discount) : '—' }}</td>

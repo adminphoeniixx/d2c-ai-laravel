@@ -251,6 +251,7 @@ class GSTController extends Controller
     protected function periodSummary(Carbon $start, Carbon $end): array
     {
         $data = Order::whereBetween('placed_at', [$start, $end])
+            ->where('status', '!=', 'cancelled')
             ->selectRaw('
                 COUNT(*) as order_count,
                 COALESCE(SUM(total_amount), 0) as total_revenue,
@@ -287,6 +288,7 @@ class GSTController extends Controller
             if ($mEnd->gt($end)) $mEnd = $end->copy()->endOfDay();
 
             $data = Order::whereBetween('placed_at', [$mStart, $mEnd])
+                ->where('status', '!=', 'cancelled')
                 ->selectRaw('
                     COUNT(*) as order_count,
                     COALESCE(SUM(total_amount), 0) as total_revenue,
@@ -320,6 +322,7 @@ class GSTController extends Controller
     {
         return Order::whereNotNull('place_of_supply')
             ->whereBetween('placed_at', [$start, $end])
+            ->where('status', '!=', 'cancelled')
             ->groupBy('place_of_supply', 'is_intra_state')
             ->selectRaw('
                 place_of_supply,
@@ -349,6 +352,7 @@ class GSTController extends Controller
     protected function ordersWithGST(Carbon $start, Carbon $end): array
     {
         return Order::whereBetween('placed_at', [$start, $end])
+            ->where('status', '!=', 'cancelled')
             ->orderByDesc('placed_at')
             ->limit(100)
             ->get(['id', 'order_number', 'customer_name', 'total_amount', 'taxable_amount',

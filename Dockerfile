@@ -12,16 +12,22 @@ FROM composer:2 AS vendor
 
 WORKDIR /app
 COPY . .
-# Install ALL deps first (lock file has dev packages), run discovery, then strip dev
+# Install ALL deps first (lock file has dev packages), run discovery, then strip dev.
+# --ignore-platform-req=ext-gd: phpoffice/phpspreadsheet requires GD, but the
+# composer:2 image's PHP doesn't ship with it. GD is installed in the runtime
+# stage below; this flag only skips the install-time check, the runtime PHP
+# will have GD available when the code actually runs.
 RUN composer install \
     --no-interaction \
     --prefer-dist \
     --optimize-autoloader \
+    --ignore-platform-req=ext-gd \
     && composer install \
     --no-dev \
     --no-interaction \
     --prefer-dist \
-    --optimize-autoloader
+    --optimize-autoloader \
+    --ignore-platform-req=ext-gd
 
 # ─── Stage 3: Production image ──────────────────────
 FROM php:8.4-fpm-alpine
@@ -32,6 +38,7 @@ RUN apk add --no-cache \
     supervisor \
     libpq-dev \
     libzip-dev \
+    libpng-dev \
     oniguruma-dev \
     icu-dev \
     poppler-utils \
@@ -44,6 +51,7 @@ RUN apk add --no-cache \
     zip \
     intl \
     pcntl \
+    gd \
     && rm -rf /var/cache/apk/*
 
 # Configure PHP for production
@@ -102,6 +110,8 @@ EXPOSE 9827
 
 # Default env for production Docker — use stderr so logs go to docker logs, not files
 ENV LOG_CHANNEL=stderr
+ENV SENTRY_LARAVEL_DSN=https://6c6b4445118ebda1b9916feb65d03a8a@o4511608337006592.ingest.us.sentry.io/4511608354897920
+ENV SENTRY_TRACES_SAMPLE_RATE=0.1
 ENV LOG_LEVEL=error
 
 ENTRYPOINT ["/entrypoint.sh"]

@@ -3,10 +3,19 @@ set -e
 
 cd /var/www
 
-# Fix storage permissions (root creates files that www-data can't write to)
-chmod -R 777 storage bootstrap/cache
-mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs
-chmod -R 777 storage
+# Create all required storage subdirectories upfront — some may not exist
+# if this is a fresh volume mount (Easypanel mounts a persistent volume
+# over /var/www/storage, which replaces what was baked into the image).
+mkdir -p \
+    storage/framework/cache/data \
+    storage/framework/sessions \
+    storage/framework/views \
+    storage/framework/testing \
+    storage/logs \
+    storage/app/public \
+    storage/app/exports \
+    storage/app/banking_uploads \
+    bootstrap/cache
 
 # Generate key if not set
 if [ -z "$APP_KEY" ]; then
@@ -54,9 +63,19 @@ php artisan storage:link 2>/dev/null || true
 # Create supervisor log dir
 mkdir -p /var/log/supervisor
 
-# Fix permissions again after all the artisan commands
-chmod -R 777 storage
+# Fix permissions AFTER all artisan commands — those commands create
+# bootstrap/cache files and storage framework files as root, which
+# php-fpm (www-data) can't overwrite on the next request. Doing this
+# last ensures every file created above is accessible to www-data.
+# Also explicitly chown so ownership is correct, not just mode bits.
+chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || true
+chmod -R 775 storage bootstrap/cache
+# Logs and framework dirs need full write access
+chmod -R 777 storage/logs storage/framework storage/app
 
 echo "Pulsara ready"
+
+# Signal queue workers to restart so they pick up new code after deploy
+php artisan queue:restart 2>/dev/null || true
 
 exec "$@"

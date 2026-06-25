@@ -26,7 +26,20 @@ class OrdersController extends Controller
 
             $baseQuery = Order::query()
                 ->when($dateRange, fn ($q) => $q->whereBetween('placed_at', [$dateRange[0], $dateRange[1]]))
-                ->when($request->filled('status'), fn ($q) => $q->where('status', $request->input('status')))
+                ->when($request->filled('status'), function ($q) use ($request) {
+                    $status = $request->input('status');
+                    if ($status === 'fulfilled') {
+                        $q->where('fulfillment_status', 'fulfilled');
+                    } elseif ($status === 'unfulfilled') {
+                        $q->where(function ($qq) {
+                            $qq->whereNull('fulfillment_status')
+                               ->orWhere('fulfillment_status', 'partial')
+                               ->orWhere('fulfillment_status', 'unfulfilled');
+                        })->whereNotIn('status', ['cancelled', 'voided', 'void', 'refunded', 'failed']);
+                    } else {
+                        $q->where('status', $status);
+                    }
+                })
                 ->when($request->filled('provider'), fn ($q) => $q->where('provider', $request->input('provider')))
                 ->when($request->string('q')->isNotEmpty(), fn ($q) => $q->where(function ($qq) use ($request) {
                     $n = '%'.$request->string('q').'%';
@@ -35,31 +48,59 @@ class OrdersController extends Controller
                        ->orWhere('customer_name', 'ilike', $n);
                 }));
 
-            $orders = (clone $baseQuery)->latest('placed_at')
+            $orders = (clone $baseQuery)
+                ->select('orders.*')
+                ->selectRaw("
+                    CASE
+                        WHEN raw_payload->'fulfillments'->0->>'shipment_status' = 'delivered'         THEN 'Delivered'
+                        WHEN raw_payload->'fulfillments'->0->>'shipment_status' = 'in_transit'        THEN 'In Transit'
+                        WHEN raw_payload->'fulfillments'->0->>'shipment_status' = 'out_for_delivery'  THEN 'Out for Delivery'
+                        WHEN raw_payload->'fulfillments'->0->>'shipment_status' = 'confirmed'         THEN 'Confirmed'
+                        WHEN raw_payload->'fulfillments'->0->>'shipment_status' = 'failure'           THEN 'Failed'
+                        WHEN raw_payload->'fulfillments'->0->>'shipment_status' = 'attempted_delivery' THEN 'Attempted'
+                        ELSE NULL
+                    END AS delivery_status
+                ")
+                ->latest('placed_at')
                 ->paginate(50)
                 ->withQueryString();
 
-            // KPIs based on same date range (but not status/provider/search filters)
-            $kpiQuery = Order::query()
-                ->when($dateRange, fn ($q) => $q->whereBetween('placed_at', [$dateRange[0], $dateRange[1]]));
+            // KPIs apply the same filters as the order list (date + status +
+            // provider + search) so the numbers always match what's shown.
+            $kpiQuery = $baseQuery;
 
-            $grossRevenue = (float) (clone $kpiQuery)->sum('total_amount');
+            $grossRevenue   = (float) (clone $kpiQuery)->sum('total_amount');
             $refundedAmount = (float) (clone $kpiQuery)->where('status', 'refunded')->sum('total_amount');
-            $cancelledAmount = (float) (clone $kpiQuery)->where('status', 'cancelled')->sum('total_amount');
+            $cancelledAmount= (float) (clone $kpiQuery)->where('status', 'cancelled')->sum('total_amount');
+
+            // Fulfillment counts are based on fulfillment_status column,
+            // not the payment status column. Unfulfilled = null or 'partial'.
+            $fulfilledCount   = (clone $kpiQuery)->where('fulfillment_status', 'fulfilled')->count();
+            // Unfulfilled = orders where fulfillment hasn't happened yet,
+            // but only for active/paid orders. Cancelled and voided orders
+            // are done — they shouldn't show up as "waiting to be fulfilled".
+            $activeStatuses = ['paid', 'pending', 'on-hold', 'on_hold', 'hold', 'processing'];
+            $unfulfilledCount = (clone $kpiQuery)->where(function ($q) {
+                $q->whereNull('fulfillment_status')
+                  ->orWhere('fulfillment_status', 'partial')
+                  ->orWhere('fulfillment_status', 'unfulfilled');
+            })->whereNotIn('status', ['cancelled', 'voided', 'void', 'refunded', 'failed'])->count();
 
             $totals = [
-                'gross_orders'     => (clone $kpiQuery)->count(),
-                'gross_revenue'    => $grossRevenue,
-                'net_revenue'      => $grossRevenue - $refundedAmount - $cancelledAmount,
-                'total_shipping'   => (float) (clone $kpiQuery)->sum('total_shipping'),
-                'total_discount'   => (float) (clone $kpiQuery)->sum('total_discount'),
-                'cancelled'        => (clone $kpiQuery)->where('status', 'cancelled')->count(),
-                'on_hold'          => (clone $kpiQuery)->whereIn('status', ['on-hold', 'hold', 'on_hold'])->count(),
-                'failed'           => (clone $kpiQuery)->where('status', 'failed')->count(),
-                'refunded'         => (clone $kpiQuery)->where('status', 'refunded')->count(),
-                'pending'          => (clone $kpiQuery)->where('status', 'pending')->count(),
-                'fulfilled'        => (clone $kpiQuery)->whereIn('status', ['fulfilled', 'completed'])->count(),
-                'paid'             => (clone $kpiQuery)->where('status', 'paid')->count(),
+                'gross_orders'   => (clone $kpiQuery)->count(),
+                'gross_revenue'  => $grossRevenue,
+                'net_revenue'    => $grossRevenue - $refundedAmount - $cancelledAmount,
+                'total_shipping' => (float) (clone $kpiQuery)->sum('total_shipping'),
+                'total_discount' => (float) (clone $kpiQuery)->sum('total_discount'),
+                'fulfilled'      => $fulfilledCount,
+                'unfulfilled'    => $unfulfilledCount,
+                // Keep these for backward compat with any other components
+                'cancelled'      => (clone $kpiQuery)->where('status', 'cancelled')->count(),
+                'pending'        => (clone $kpiQuery)->where('status', 'pending')->count(),
+                'paid'           => (clone $kpiQuery)->where('status', 'paid')->count(),
+                'refunded'       => (clone $kpiQuery)->where('status', 'refunded')->count(),
+                'failed'         => (clone $kpiQuery)->where('status', 'failed')->count(),
+                'on_hold'        => (clone $kpiQuery)->whereIn('status', ['on-hold', 'hold', 'on_hold'])->count(),
             ];
         } catch (\Throwable $e) {
             $orders = new \Illuminate\Pagination\LengthAwarePaginator([], 0, 50);
@@ -210,23 +251,43 @@ class OrdersController extends Controller
 
     protected function getDateRange(?string $range, ?string $from = null, ?string $to = null): ?array
     {
-        // Custom date range takes priority
+        // All presets are computed in IST ("Asia/Kolkata") regardless of the
+        // app's internal/storage timezone (UTC). The app serves Indian D2C
+        // merchants, so "Today" must mean the IST calendar day the merchant
+        // is actually living in — not the UTC calendar day the server is on.
+        // Using Carbon::today()/now() directly resolves in app.timezone
+        // (UTC), which silently shifts the day boundary by 5.5 hours and
+        // causes orders placed late at night IST to fall outside "Today"
+        // (or orders from the start of the IST day to be excluded until
+        // UTC catches up). Carbon's date/time columns are stored in UTC by
+        // Eloquent casting, but comparisons below still work correctly
+        // against whereBetween() since Carbon instances carry their own
+        // offset and get normalized to UTC for the SQL comparison.
+        $nowIst = Carbon::now('Asia/Kolkata');
+
+        // Custom date range takes priority. Inputs from the date picker are
+        // plain calendar dates with no timezone info — interpret them as
+        // IST dates too, for the same reason.
         if ($from && $to) {
-            return [Carbon::parse($from)->startOfDay(), Carbon::parse($to)->endOfDay()];
+            return [
+                Carbon::parse($from, 'Asia/Kolkata')->startOfDay(),
+                Carbon::parse($to, 'Asia/Kolkata')->endOfDay(),
+            ];
         }
         if ($from) {
-            return [Carbon::parse($from)->startOfDay(), Carbon::now()];
+            return [Carbon::parse($from, 'Asia/Kolkata')->startOfDay(), $nowIst->copy()];
         }
 
         return match ($range) {
-            'today'    => [Carbon::today(), Carbon::now()],
-            'week'     => [Carbon::now()->startOfWeek(), Carbon::now()],
-            'month'    => [Carbon::now()->startOfMonth(), Carbon::now()],
-            '3months'  => [Carbon::now()->subMonths(3), Carbon::now()],
-            '6months'  => [Carbon::now()->subMonths(6), Carbon::now()],
-            'year'     => [Carbon::now()->startOfYear(), Carbon::now()],
-            'lastyear' => [Carbon::now()->subYear()->startOfYear(), Carbon::now()->subYear()->endOfYear()],
-            default    => null,
+            'today'     => [$nowIst->copy()->startOfDay(), $nowIst->copy()],
+            'yesterday' => [$nowIst->copy()->subDay()->startOfDay(), $nowIst->copy()->subDay()->endOfDay()],
+            'week'      => [$nowIst->copy()->startOfWeek(), $nowIst->copy()],
+            'month'     => [$nowIst->copy()->startOfMonth(), $nowIst->copy()],
+            '3months'   => [$nowIst->copy()->subMonths(3), $nowIst->copy()],
+            '6months'   => [$nowIst->copy()->subMonths(6), $nowIst->copy()],
+            'year'      => [$nowIst->copy()->startOfYear(), $nowIst->copy()],
+            'lastyear'  => [$nowIst->copy()->subYear()->startOfYear(), $nowIst->copy()->subYear()->endOfYear()],
+            default     => null,
         };
     }
 

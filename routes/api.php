@@ -24,6 +24,7 @@ Route::prefix('v1')->group(function () {
     // ── Authenticated (Bearer token) ─────────
     Route::post('/auth/register-face', [AuthController::class, 'registerFace']);
     Route::get('/me',                  [AuthController::class, 'me']);
+    Route::delete('/account',          [AuthController::class, 'deleteAccount']);
 
     // ── Attendance ───────────────────────────
     Route::post('/attendance/check-in',  [AttendanceApiController::class, 'checkIn']);

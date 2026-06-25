@@ -7,6 +7,7 @@ namespace App\Services\Integrations\Shopify;
 use App\Models\IntegrationAccount;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Minimal Shopify Admin REST client.
@@ -222,6 +223,89 @@ class ShopifyClient
             }
 
             // Parse Link header for page_info
+            $link = $response->header('Link') ?? '';
+            $nextPageInfo = $this->parseNextPageInfo($link);
+        } while ($nextPageInfo !== null);
+    }
+
+    /**
+     * Update inventory quantity for a specific Shopify variant via the
+     * Inventory API. Requires the inventory_item_id (not the variant id).
+     *
+     * We get the location_id from the existing inventory level for this
+     * item rather than calling locations.json — this avoids needing the
+     * read_locations scope, which client_credentials tokens often lack.
+     *
+     * Returns true on success, false if Shopify rejected the update.
+     */
+    public function updateInventoryQuantity(string $inventoryItemId, int $quantity): bool
+    {
+        // Get the current inventory level for this item — tells us which
+        // location_id it's tracked at without needing read_locations scope.
+        $levelResponse = $this->request()->get('inventory_levels.json', [
+            'inventory_item_ids' => $inventoryItemId,
+        ]);
+
+        if (!$levelResponse->successful()) {
+            Log::warning('ShopifyClient: could not fetch inventory levels', [
+                'status' => $levelResponse->status(),
+                'body'   => $levelResponse->body(),
+            ]);
+            return false;
+        }
+
+        $levels = $levelResponse->json('inventory_levels', []);
+        if (empty($levels)) {
+            Log::warning('ShopifyClient: no inventory levels found for item', [
+                'inventory_item_id' => $inventoryItemId,
+            ]);
+            return false;
+        }
+
+        $locationId = $levels[0]['location_id'];
+
+        // Set the absolute quantity at that location
+        $response = $this->request()->post('inventory_levels/set.json', [
+            'location_id'       => $locationId,
+            'inventory_item_id' => (int) $inventoryItemId,
+            'available'         => $quantity,
+        ]);
+
+        if (!$response->successful()) {
+            Log::warning('ShopifyClient: inventory set failed', [
+                'status' => $response->status(),
+                'body'   => $response->body(),
+            ]);
+        }
+
+        return $response->successful();
+    }
+
+    /**
+     * Fetch products with cursor pagination. Yields individual products.
+     *
+     * @return \Generator<int,array>
+     */
+    public function products(array $query = []): \Generator
+    {
+        $params = array_merge([
+            'limit' => 100,
+        ], $query);
+
+        $nextPageInfo = null;
+
+        do {
+            $params = $nextPageInfo
+                ? ['limit' => 100, 'page_info' => $nextPageInfo]
+                : $params;
+
+            $response = $this->request()->get('products.json', $params)->throw();
+            $products = $response->json('products', []);
+
+            foreach ($products as $product) {
+                yield $product;
+            }
+
             $link = $response->header('Link') ?? '';
             $nextPageInfo = $this->parseNextPageInfo($link);
         } while ($nextPageInfo !== null);

@@ -22,11 +22,14 @@ const ACTION_ROUTES = {
     ai: 'tenant.ai',
 };
 
-const severityColor = computed(() => ({
-    high:   'border-rose-500/30 bg-rose-500/5',
-    medium: 'border-amber-500/30 bg-amber-500/5',
-    low:    'border-frost-1 bg-surface-2',
-}[props.insight.severity] || 'border-frost-1 bg-surface-2'));
+const severityColor = computed(() => {
+    if (props.insight.type === 'positive') return 'border-brand-600/30 bg-brand-600/5';
+    return ({
+        high:   'border-rose-500/30 bg-rose-500/5',
+        medium: 'border-amber-500/30 bg-amber-500/5',
+        low:    'border-frost-1 bg-surface-2',
+    }[props.insight.severity] || 'border-frost-1 bg-surface-2');
+});
 
 const badgeColor = computed(() => ({
     high:   'bg-rose-500/15 text-rose-400',
@@ -49,8 +52,11 @@ function goToAction() {
 <div class="rounded-xl border p-4 transition" :class="severityColor">
     <div class="flex items-start gap-3">
         <div class="h-7 w-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
-             :class="insight.type === 'opportunity' ? 'bg-emerald-500/15' : 'bg-rose-500/15'">
+             :class="insight.type === 'opportunity' ? 'bg-emerald-500/15' : insight.type === 'positive' ? 'bg-brand-600/15' : 'bg-rose-500/15'">
             <TrendingUp v-if="insight.type === 'opportunity'" :size="14" class="text-emerald-400" />
+            <svg v-else-if="insight.type === 'positive'" width="14" height="14" viewBox="0 0 20 20" fill="currentColor" class="text-brand-300">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+            </svg>
             <AlertTriangle v-else :size="14" class="text-rose-400" />
         </div>
         <div class="flex-1 min-w-0">

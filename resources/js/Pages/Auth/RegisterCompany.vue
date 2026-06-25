@@ -34,10 +34,19 @@ const form = useForm({
 const categories = [
     { value: 'apparel', label: 'Apparel & Fashion' },
     { value: 'footwear', label: 'Footwear' },
+    { value: 'jewelry', label: 'Jewelry & Accessories' },
     { value: 'electronics', label: 'Electronics' },
     { value: 'beauty', label: 'Beauty & Personal Care' },
+    { value: 'wellness', label: 'Health & Wellness' },
     { value: 'food', label: 'Food & Beverages' },
+    { value: 'home', label: 'Home & Decor' },
+    { value: 'baby_kids', label: 'Baby & Kids' },
+    { value: 'pet', label: 'Pet Supplies' },
+    { value: 'sports_fitness', label: 'Sports & Fitness' },
     { value: 'luxury', label: 'Luxury Goods' },
+    { value: 'books_stationery', label: 'Books & Stationery' },
+    { value: 'art_craft', label: 'Art, Craft & Handmade' },
+    { value: 'spiritual', label: 'Spiritual & Astrology' },
     { value: 'other', label: 'Other' },
 ];
 

@@ -1,7 +1,7 @@
 <script setup>
 import { Head, router } from '@inertiajs/vue3';
 import { ref, nextTick, computed } from 'vue';
-import { Bot, Send, Sparkles, Loader2, Plus, Trash2, MessageSquare, ChevronDown, ChevronUp, Database, Zap } from 'lucide-vue-next';
+import { Bot, Send, Sparkles, Loader2, Plus, Trash2, MessageSquare, ChevronDown, ChevronUp, Database, Zap, Download, FileSpreadsheet } from 'lucide-vue-next';
 import TenantLayout from '@/Layouts/TenantLayout.vue';
 
 const props = defineProps({
@@ -19,6 +19,7 @@ const messages = ref([
 const input = ref('');
 const loading = ref(false);
 const expandedSql = ref({}); // message id -> bool
+const exportingMessages = ref({}); // message id -> bool (button in-flight)
 const scrollArea = ref(null);
 
 function scrollToBottom() {
@@ -140,6 +141,56 @@ function toggleSql(id) {
     expandedSql.value = { ...expandedSql.value, [id]: !expandedSql.value[id] };
 }
 
+async function runExport(messageId) {
+    if (!messageId || exportingMessages.value[messageId]) return;
+    exportingMessages.value = { ...exportingMessages.value, [messageId]: true };
+
+    try {
+        const res = await fetch(`/app/${slug}/ai/messages/${messageId}/run-export`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-XSRF-TOKEN': csrfToken(),
+            },
+        });
+
+        if (!res.ok) throw new Error('Export failed');
+
+        const data = await res.json();
+
+        // Mark the proposal message as fulfilled so the button hides
+        const proposal = messages.value.find(m => m.id === data.proposal_message_id);
+        if (proposal) {
+            proposal.meta = { ...(proposal.meta || {}), pending_export_fulfilled: true };
+        }
+
+        // Append the new assistant message carrying the download card
+        messages.value.push({
+            id: data.message.id,
+            role: 'assistant',
+            content: data.message.content,
+            sql: data.message.sql,
+            meta: data.message.meta,
+        });
+        scrollToBottom();
+    } catch (e) {
+        messages.value.push({
+            role: 'assistant',
+            content: "Couldn't generate the export. Please try again.",
+        });
+        scrollToBottom();
+    } finally {
+        // Don't clear the in-flight flag on success — we want the button
+        // to stay disabled once it's been used. On error, allow retry.
+        if (!messages.value.some(m => m.meta?.download?.url)) {
+            const next = { ...exportingMessages.value };
+            delete next[messageId];
+            exportingMessages.value = next;
+        }
+    }
+}
+
 const showSuggestions = computed(() => messages.value.length <= 1 && !loading.value);
 
 function timeAgo(dateStr) {
@@ -218,6 +269,34 @@ function timeAgo(dateStr) {
                                  : 'bg-surface-2 text-ink border border-frost-1'">
                             {{ msg.content }}
                         </div>
+
+                        <!-- Export to Excel button (shown on export proposals that haven't been fulfilled yet) -->
+                        <button v-if="msg.role === 'assistant' && msg.meta?.pending_export && !msg.meta?.pending_export_fulfilled && msg.id"
+                                @click="runExport(msg.id)"
+                                :disabled="exportingMessages[msg.id]"
+                                class="inline-flex items-center gap-2 px-3.5 py-2 rounded-[10px] bg-brand-600 hover:bg-brand-500 disabled:bg-brand-600/40 disabled:cursor-not-allowed text-white text-[12.5px] font-medium transition">
+                            <Loader2 v-if="exportingMessages[msg.id]" :size="14" class="animate-spin" />
+                            <FileSpreadsheet v-else :size="14" />
+                            <span>{{ exportingMessages[msg.id] ? 'Building file...' : 'Export to Excel' }}</span>
+                        </button>
+
+                        <!-- Excel download card (shown when an export was generated) -->
+                        <a v-if="msg.role === 'assistant' && msg.meta?.download?.url"
+                           :href="msg.meta.download.url"
+                           target="_blank"
+                           rel="noopener"
+                           class="flex items-center gap-3 px-3.5 py-2.5 rounded-[12px] bg-brand-600/10 border border-brand-600/40 hover:bg-brand-600/20 transition cursor-pointer no-underline">
+                            <div class="h-9 w-9 rounded-lg bg-brand-600/25 flex items-center justify-center flex-shrink-0">
+                                <FileSpreadsheet :size="18" class="text-brand-300" />
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="text-[12.5px] font-medium text-white truncate">{{ msg.meta.download.filename }}</div>
+                                <div class="text-[10.5px] text-ink-3">
+                                    {{ msg.meta.download.row_count }} row{{ msg.meta.download.row_count === 1 ? '' : 's' }} · expires in 30 min
+                                </div>
+                            </div>
+                            <Download :size="14" class="text-brand-300 flex-shrink-0" />
+                        </a>
 
                         <!-- Badges + SQL transparency -->
                         <div v-if="msg.role === 'assistant' && (msg.sql || msg.meta?.escalated || msg.meta?.row_count)"

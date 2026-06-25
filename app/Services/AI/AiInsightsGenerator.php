@@ -58,7 +58,11 @@ class AiInsightsGenerator
         foreach ($items as $item) {
             if (!is_array($item)) continue;
 
-            $type = ($item['type'] ?? '') === 'opportunity' ? 'opportunity' : 'alert';
+            $type = match($item['type'] ?? '') {
+                'opportunity' => 'opportunity',
+                'positive'    => 'positive',
+                default       => 'alert',
+            };
 
             $severity = $item['severity'] ?? 'medium';
             if (!in_array($severity, ['high', 'medium', 'low'], true)) $severity = 'medium';
@@ -113,7 +117,7 @@ class AiInsightsGenerator
         ]);
 
         return AiInsight::orderByRaw("CASE severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END")
-            ->orderByRaw("CASE type WHEN 'alert' THEN 0 ELSE 1 END")
+            ->orderByRaw("CASE type WHEN 'alert' THEN 0 WHEN 'opportunity' THEN 1 ELSE 2 END")
             ->get();
     }
 
@@ -123,13 +127,16 @@ class AiInsightsGenerator
 You are heyd2c's AI business analyst for the D2C company "{$companyName}".
 
 You will be given a JSON object of business metrics (revenue, expenses, inventory, ads, logistics, etc.).
-Generate a prioritized list of 5 to 8 actionable insights — a mix of ALERTS (problems worth fixing) and
-OPPORTUNITIES (things worth capitalizing on) — based ONLY on the data given.
+Generate a prioritized list of 5 to 8 actionable insights — a mix of ALERTS (problems worth fixing),
+OPPORTUNITIES (things worth capitalizing on), and POSITIVES (things that are genuinely going well and
+should be acknowledged or continued) — based ONLY on the data given.
 
 RULES:
 - Every insight must be directly grounded in the numbers provided. Do not invent data.
 - If a metric is zero, empty, missing, or simply not concerning, do NOT manufacture an insight about it.
 - Use ₹ for currency (e.g. ₹1,23,456), and be specific with numbers/percentages.
+- Include at least 1 positive insight when the data supports it (e.g. healthy margin, good repeat rate,
+  low RTO, strong revenue growth). Do not force positives if the data doesn't support them.
 - title: max 8 words, plain and specific (e.g. "Inventory running low on 3 SKUs").
 - description: 1-2 sentences, specific numbers, and what to DO about it (the "how").
 - action_label: max 4 words, an imperative button label (e.g. "Restock now", "Review pricing", "View P&L").
@@ -139,7 +146,7 @@ RULES:
 - Order the array with the most important/urgent insight first.
 
 Respond with ONLY a JSON object, no markdown, no explanation:
-{"insights":[{"type":"alert|opportunity","severity":"high|medium|low","title":"...","description":"...","action_label":"...","action_page":"..."}]}
+{"insights":[{"type":"alert|opportunity|positive","severity":"high|medium|low","title":"...","description":"...","action_label":"...","action_page":"..."}]}
 PROMPT;
     }
 

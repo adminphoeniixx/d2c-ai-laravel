@@ -1,7 +1,7 @@
 <script setup>
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
-import { Check, X, Clock, AlertCircle } from 'lucide-vue-next';
+import { Check, X, Clock, AlertCircle, CalendarCheck, ClipboardList } from 'lucide-vue-next';
 import TenantLayout from '@/Layouts/TenantLayout.vue';
 
 const props = defineProps({
@@ -33,9 +33,21 @@ const statusColors = { pending: 'bg-amber-500/20 text-amber-400', approved: 'bg-
 <Head title="Leave Requests" />
 <TenantLayout>
     <div class="max-w-3xl">
-        <div class="mb-5">
-            <h2 class="text-[20px] font-bold text-white">Leave Requests</h2>
-            <p class="text-[12px] text-ink-3 mt-1">Review and manage employee leave applications</p>
+        <div class="mb-5 flex items-start justify-between gap-3 flex-wrap">
+            <div>
+                <h2 class="text-[20px] font-bold text-white">Leave Requests</h2>
+                <p class="text-[12px] text-ink-3 mt-1">Review and manage employee leave applications</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <Link :href="route('tenant.hr.leaves.types', { tenant: slug })"
+                      class="btn btn-ghost btn-sm flex items-center gap-1.5 cursor-pointer">
+                    <CalendarCheck :size="13" /> Leave Types
+                </Link>
+                <Link :href="route('tenant.hr.leaves.balances', { tenant: slug })"
+                      class="btn btn-ghost btn-sm flex items-center gap-1.5 cursor-pointer">
+                    <ClipboardList :size="13" /> Leave Balances
+                </Link>
+            </div>
         </div>
 
         <!-- Status Tabs -->

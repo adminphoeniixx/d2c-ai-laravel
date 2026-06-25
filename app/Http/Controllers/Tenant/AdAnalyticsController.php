@@ -16,6 +16,7 @@ use App\Services\BunnyCDN;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -156,6 +157,7 @@ class AdAnalyticsController extends Controller
             'invoice_date'   => ['nullable', 'date'],
             'period_from'    => ['nullable', 'date'],
             'period_to'      => ['nullable', 'date'],
+            'tax_amount'     => ['nullable', 'numeric', 'min:0'],
             'invoice_pdf'    => ['nullable', 'file', 'mimes:pdf', 'max:10240'],
             'spend_csv'      => ['nullable', 'file', 'mimes:csv,txt', 'max:10240'],
         ]);
@@ -174,14 +176,30 @@ class AdAnalyticsController extends Controller
         // Use extracted values as fallback for empty fields
         $platform = $request->input('platform') ?: ($extracted['platform'] ?? 'other');
         $invoiceNumber = $request->input('invoice_number') ?: ($extracted['invoice_number'] ?? null);
+        $transactionId = $extracted['transaction_id'] ?? null;
         $invoiceDate = $request->input('invoice_date') ?: ($extracted['invoice_date'] ?? now()->format('Y-m-d'));
         $periodFrom = $request->input('period_from') ?: ($extracted['period_from'] ?? null);
         $periodTo = $request->input('period_to') ?: ($extracted['period_to'] ?? null);
 
+        // Tax: a manually entered amount always wins over what the AI
+        // extracted. Some invoice formats (e.g. Meta's per-transaction tax
+        // invoice, as opposed to a periodic billing report) don't show a
+        // separate GST line at all, so the person reviewing the upload
+        // needs a way to add it by hand rather than being stuck with
+        // whatever (or nothing) the extractor found.
+        $manualTax = $request->input('tax_amount');
+        $tax = ($manualTax !== null && $manualTax !== '') ? (float) $manualTax : (float) ($extracted['tax'] ?? 0);
+
+        // Filename: prefer transaction_id (Meta's real unique id), then
+        // invoice_number, then a random suffix — never reuse a shared
+        // Account ID here either, or two Meta PDFs would overwrite each
+        // other's stored file on the CDN.
+        $fileKey = $transactionId ?: ($invoiceNumber ?: Str::random(8));
+
         $pdfUrl = null;
         if ($request->hasFile('invoice_pdf')) {
             try {
-                $path = "ads/{$platform}/" . ($invoiceNumber ?: Str::random(8)) . '.pdf';
+                $path = "ads/{$platform}/" . $fileKey . '.pdf';
                 $cdn = new BunnyCDN();
                 $cdn->upload($path, file_get_contents($request->file('invoice_pdf')->getRealPath()));
                 $pdfUrl = config('services.bunny.cdn_url') . '/' . $path;
@@ -190,28 +208,57 @@ class AdAnalyticsController extends Controller
             }
         }
 
-        // Dedup: if same invoice number exists, delete old entries and re-import
+        // Dedup: re-uploading the SAME invoice should replace it, not
+        // create a duplicate. The uniqueness key must be the most specific
+        // identifier we actually have:
+        //   1. transaction_id (Meta's true per-invoice identifier, stored
+        //      in metadata) — preferred whenever present.
+        //   2. invoice_number — only used when no transaction_id exists,
+        //      since some platforms (Delhivery, Google) do issue a real
+        //      single invoice number.
+        // If NEITHER is available, we deliberately do NOT dedup — treating
+        // every such upload as new is far safer than guessing wrong and
+        // silently destroying a different invoice's data, which is what
+        // happened when this used to fall back to the shared Meta Account
+        // ID: two unrelated invoices from the same ad account would
+        // collide and the second upload would overwrite the first.
         $existingInvoice = null;
-        if ($invoiceNumber) {
+        if ($transactionId) {
+            $existingInvoice = AdInvoice::whereRaw("metadata->>'transaction_id' = ?", [$transactionId])->first();
+        } elseif ($invoiceNumber) {
             $existingInvoice = AdInvoice::where('invoice_number', $invoiceNumber)->first();
-            if ($existingInvoice) {
-                $existingInvoice->entries()->delete();
-                $existingInvoice->update([
-                    'platform'       => $platform,
-                    'invoice_date'   => $invoiceDate,
-                    'period_from'    => $periodFrom,
-                    'period_to'      => $periodTo,
-                    'subtotal'       => $extracted['subtotal'] ?? 0,
-                    'tax'            => $extracted['tax'] ?? 0,
-                    'total_amount'   => $extracted['total_amount'] ?? 0,
-                    'file_url'       => $pdfUrl ?? $existingInvoice->file_url,
-                    'metadata'       => array_filter([
-                        'source' => $extracted['source'] ?? null,
-                        'gstin'  => $extracted['gstin'] ?? $extracted['customer_gstin'] ?? null,
-                        'tds'    => $extracted['tds'] ?? null,
-                    ]),
-                ]);
-            }
+        }
+
+        $metadata = array_filter([
+            'source'         => $extracted['source'] ?? null,
+            'gstin'          => $extracted['gstin'] ?? $extracted['customer_gstin'] ?? null,
+            'tds'            => $extracted['tds'] ?? null,
+            'transaction_id' => $transactionId,
+        ]);
+
+        // total_amount: prefer subtotal + tax (most reliable, especially
+        // once a manual tax override is involved) and only fall back to
+        // whatever the AI extracted as total_amount when we have no
+        // subtotal to compute from at all.
+        $subtotal = (float) ($extracted['subtotal'] ?? 0);
+        $totalAmount = $subtotal > 0
+            ? $subtotal + $tax
+            : (float) ($extracted['total_amount'] ?? 0);
+
+        if ($existingInvoice) {
+            $existingInvoice->entries()->delete();
+            $existingInvoice->update([
+                'platform'       => $platform,
+                'invoice_number' => $invoiceNumber,
+                'invoice_date'   => $invoiceDate,
+                'period_from'    => $periodFrom,
+                'period_to'      => $periodTo,
+                'subtotal'       => $subtotal,
+                'tax'            => $tax,
+                'total_amount'   => $totalAmount,
+                'file_url'       => $pdfUrl ?? $existingInvoice->file_url,
+                'metadata'       => $metadata,
+            ]);
         }
 
         $invoice = $existingInvoice ?? AdInvoice::create([
@@ -220,15 +267,11 @@ class AdAnalyticsController extends Controller
             'invoice_date'   => $invoiceDate,
             'period_from'    => $periodFrom,
             'period_to'      => $periodTo,
-            'subtotal'       => $extracted['subtotal'] ?? 0,
-            'tax'            => $extracted['tax'] ?? 0,
-            'total_amount'   => $extracted['total_amount'] ?? 0,
+            'subtotal'       => $subtotal,
+            'tax'            => $tax,
+            'total_amount'   => $totalAmount,
             'file_url'       => $pdfUrl,
-            'metadata'       => array_filter([
-                'source'     => $extracted['source'] ?? null,
-                'gstin'      => $extracted['gstin'] ?? $extracted['customer_gstin'] ?? null,
-                'tds'        => $extracted['tds'] ?? null,
-            ]),
+            'metadata'       => $metadata,
         ]);
 
         // Import transactions from extracted PDF data (Meta daily payments)
@@ -259,14 +302,23 @@ class AdAnalyticsController extends Controller
             }
         }
 
-        // Fallback: if PDF had a total but no individual transactions, create one summary entry
-        if ($imported === 0 && !empty($extracted['subtotal']) && $extracted['subtotal'] > 0) {
+        // Fallback: if PDF had a total but no individual transactions, create
+        // one summary entry. Some Meta invoice formats (notably the
+        // per-transaction "Tax invoice" layout, as opposed to a periodic
+        // "Billing Report") show only a total_amount with no separately
+        // labeled subtotal — so we must fall back to total_amount too, or
+        // invoices in that format silently never reach ad_spend_manual and
+        // therefore never show up in P&L despite having uploaded fine.
+        // Uses $totalAmount (already resolved above, including any manual
+        // tax override) rather than re-deriving from $extracted, so the
+        // P&L entry always matches what's shown on the invoice card.
+        if ($imported === 0 && $totalAmount > 0) {
             AdSpendManual::create([
                 'ad_invoice_id'    => $invoice->id,
                 'platform'         => $platform,
                 'date'             => $invoiceDate,
                 'campaign_name'    => ucfirst($platform) . ' Ads (Invoice Total)',
-                'spend'            => $extracted['subtotal'],
+                'spend'            => $totalAmount,
                 'source'           => 'pdf',
             ]);
             $imported = 1;
@@ -346,6 +398,34 @@ class AdAnalyticsController extends Controller
     public function deleteInvoice(Request $request, string $tenant, string $invoiceId): RedirectResponse
     {
         $invoice = AdInvoice::findOrFail($invoiceId);
+
+        // Remove the stored PDF from Bunny CDN (or local public storage)
+        // before deleting the DB row — otherwise the file is orphaned
+        // forever with nothing left pointing at it to clean up later.
+        if ($invoice->file_url) {
+            try {
+                $cdn = new BunnyCDN();
+                $deleted = $cdn->delete($invoice->file_url);
+
+                if (!$deleted && str_starts_with($invoice->file_url, '/storage/')) {
+                    // Fell back to local public storage at upload time —
+                    // BunnyCDN::delete() only handles CDN URLs, so remove
+                    // the local file directly via the public disk.
+                    $localPath = ltrim(str_replace('/storage/', '', $invoice->file_url), '/');
+                    Storage::disk('public')->delete($localPath);
+                }
+            } catch (\Throwable $e) {
+                \Log::warning('Failed to delete ad invoice file from storage', [
+                    'invoice_id' => $invoice->id,
+                    'file_url'   => $invoice->file_url,
+                    'error'      => $e->getMessage(),
+                ]);
+                // Don't block the DB delete on a storage cleanup failure —
+                // an orphaned file is recoverable; a stuck "can't delete
+                // invoice" experience is worse for the user.
+            }
+        }
+
         $invoice->entries()->delete();
         $invoice->delete();
         return back()->with('success', 'Ad invoice deleted.');

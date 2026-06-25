@@ -92,7 +92,29 @@ class SyncWooOrders implements ShouldQueue
                 // Don't let logging failure override connected status
             }
         } catch (\Throwable $e) {
-            $account->update(['status' => IntegrationAccount::STATUS_ERROR, 'error_message' => $e->getMessage()]);
+            $message = $e->getMessage();
+
+            // DNS resolution failures (cURL error 6) and connection refused
+            // errors mean the WooCommerce site is down, deleted, or the
+            // domain has expired. Retrying 3 times wastes queue capacity
+            // since these are permanent failures, not transient ones.
+            // Mark as disconnected with a human-readable message so the
+            // user knows to reconnect or update the store URL.
+            $isPermanentFailure = str_contains($message, 'cURL error 6')
+                || str_contains($message, 'Could not resolve host')
+                || str_contains($message, 'Domain name not found')
+                || str_contains($message, 'Connection refused');
+
+            if ($isPermanentFailure) {
+                $account->update([
+                    'status'        => IntegrationAccount::STATUS_ERROR,
+                    'error_message' => 'Could not connect to your WooCommerce store. The domain may have expired or the store may be offline. Please check your store URL in Integrations.',
+                ]);
+                // Don't throw — this stops the job from retrying pointlessly
+                return;
+            }
+
+            $account->update(['status' => IntegrationAccount::STATUS_ERROR, 'error_message' => $message]);
             throw $e;
         } finally {
             tenancy()->end();

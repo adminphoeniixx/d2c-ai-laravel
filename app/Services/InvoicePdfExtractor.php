@@ -62,7 +62,24 @@ class InvoicePdfExtractor
 
         // Common patterns
         if (preg_match('/Invoice\s*Number\s*:?\s*([A-Z0-9\-\/]+)/i', $text, $m)) $data['invoice_number'] = $m[1];
-        if (preg_match('/Account:\s*(\d+)/i', $text, $m)) $data['invoice_number'] = $data['invoice_number'] ?? ('META-' . $m[1]);
+
+        // Meta's unique per-invoice identifier is "Transaction ID", a long
+        // numeric string (often hyphenated, e.g. "27463631903324598-...").
+        // The Account ID / "Tax invoice for <id>" number repeats across
+        // EVERY invoice from the same ad account, so it must never be used
+        // as the uniqueness key — doing so collides unrelated invoices and
+        // causes one to silently overwrite another on re-upload.
+        if (preg_match('/Transaction\s*ID\s*:?\s*([0-9\-]+)/i', $text, $m)) {
+            $data['transaction_id'] = $m[1];
+        }
+
+        // Only fall back to an Account-ID-derived invoice_number if this
+        // platform genuinely has no transaction_id to key on (e.g. an
+        // older/different invoice format) — never for the common Meta case.
+        if (empty($data['invoice_number']) && empty($data['transaction_id'])
+            && preg_match('/Account(?:\s*ID)?\s*:?\s*(\d+)/i', $text, $m)) {
+            $data['invoice_number'] = 'META-' . $m[1];
+        }
         if (preg_match('/Invoice\s*Date\s*:?\s*(\d{1,2}-[A-Z]{3}-\d{2,4})/i', $text, $m)) $data['invoice_date'] = $this->parseDate($m[1]);
         if (preg_match('/Billing Report:\s*(\d{1,2}\/\d{1,2}\/\d{4})\s*-\s*(\d{1,2}\/\d{1,2}\/\d{4})/i', $text, $m)) {
             $data['period_from'] = $this->parseDate($m[1]);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Tenant\AdAnalyticsController;
 use App\Http\Controllers\Tenant\AiCopilotController;
+use App\Http\Controllers\Tenant\AiExportDownloadController;
 use App\Http\Controllers\Tenant\AiInsightsController;
 use App\Http\Controllers\Tenant\CashFlowController;
 use App\Http\Controllers\Tenant\DashboardController;
@@ -15,7 +16,7 @@ use App\Http\Controllers\Tenant\PnLReportController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Tenant\ExpenseUploadController;
 
-Route::middleware(['auth', 'verified', 'tenant'])->group(function () {
+Route::middleware(['auth', 'verified', 'tenant', 'share.subscription'])->group(function () {
 
     Route::get('/',              [DashboardController::class, 'index'])->name('dashboard');
     Route::post('/sync-all',     [DashboardController::class, 'syncAll'])->name('sync-all');
@@ -56,6 +57,12 @@ Route::middleware(['auth', 'verified', 'tenant'])->group(function () {
     Route::get('/gst',              [\App\Http\Controllers\Tenant\GSTController::class, 'index'])->name('gst');
     Route::get('/gst/export',       [\App\Http\Controllers\Tenant\GSTExportController::class, 'gstr1'])->name('gst.export');
     Route::post('/gst/recalculate', [\App\Http\Controllers\Tenant\GSTController::class, 'recalculate'])->name('gst.recalculate');
+
+    // Compliances — PF and ESIC (placeholder pages, full build coming)
+    Route::prefix('compliances')->name('compliances.')->group(function () {
+        Route::get('/pf',   fn () => \Inertia\Inertia::render('Tenant/Compliances/PF'))->name('pf');
+        Route::get('/esic', fn () => \Inertia\Inertia::render('Tenant/Compliances/ESIC'))->name('esic');
+    });
     Route::get('/orders/export',    [\App\Http\Controllers\Tenant\GSTExportController::class, 'ordersExport'])->name('orders.export');
 
     Route::get('/settings',      [\App\Http\Controllers\Tenant\CompanySettingsController::class, 'index'])->name('settings');
@@ -138,15 +145,47 @@ Route::middleware(['auth', 'verified', 'tenant'])->group(function () {
     Route::prefix('inventory-mgmt')->name('inventory-mgmt.')->group(function () {
         Route::get('/',             [\App\Http\Controllers\Tenant\InventoryController::class, 'index'])->name('index');
         Route::post('/',            [\App\Http\Controllers\Tenant\InventoryController::class, 'store'])->name('store');
+        Route::post('/sync-shopify', [\App\Http\Controllers\Tenant\InventoryController::class, 'syncFromShopify'])->name('sync-shopify');
         Route::get('/{id}',         [\App\Http\Controllers\Tenant\InventoryController::class, 'show'])->name('show');
         Route::put('/{id}',         [\App\Http\Controllers\Tenant\InventoryController::class, 'update'])->name('update');
         Route::post('/{id}/adjust', [\App\Http\Controllers\Tenant\InventoryController::class, 'adjustStock'])->name('adjust');
     });
 
+    // Raw Materials
+    Route::prefix('raw-materials')->name('raw-materials.')->group(function () {
+        Route::get('/',                        [\App\Http\Controllers\Tenant\RawMaterialController::class, 'index'])->name('index');
+        Route::post('/',                       [\App\Http\Controllers\Tenant\RawMaterialController::class, 'store'])->name('store');
+        Route::put('/{id}',                    [\App\Http\Controllers\Tenant\RawMaterialController::class, 'update'])->name('update');
+        Route::delete('/{id}',                 [\App\Http\Controllers\Tenant\RawMaterialController::class, 'destroy'])->name('destroy');
+        Route::get('/{id}/transactions',       [\App\Http\Controllers\Tenant\RawMaterialController::class, 'transactions'])->name('transactions');
+        Route::post('/{id}/transactions',      [\App\Http\Controllers\Tenant\RawMaterialController::class, 'addTransaction'])->name('transactions.store');
+    });
+    Route::prefix('packaging')->name('packaging.')->group(function () {
+        Route::get('/inventory',          [\App\Http\Controllers\Tenant\PackagingController::class, 'inventoryIndex'])->name('inventory.index');
+        Route::post('/inventory',         [\App\Http\Controllers\Tenant\PackagingController::class, 'inventoryStore'])->name('inventory.store');
+        Route::put('/inventory/{id}',     [\App\Http\Controllers\Tenant\PackagingController::class, 'inventoryUpdate'])->name('inventory.update');
+        Route::delete('/inventory/{id}',  [\App\Http\Controllers\Tenant\PackagingController::class, 'inventoryDestroy'])->name('inventory.destroy');
+
+        Route::get('/orders',             [\App\Http\Controllers\Tenant\PackagingController::class, 'ordersIndex'])->name('orders.index');
+        Route::get('/orders/create',      [\App\Http\Controllers\Tenant\PackagingController::class, 'ordersCreate'])->name('orders.create');
+        Route::post('/orders',            [\App\Http\Controllers\Tenant\PackagingController::class, 'ordersStore'])->name('orders.store');
+        Route::patch('/orders/{id}/status', [\App\Http\Controllers\Tenant\PackagingController::class, 'ordersUpdateStatus'])->name('orders.update-status');
+    });
+
     Route::get('/ai',         [AiCopilotController::class, 'index'])->name('ai');
     Route::post('/ai/prompt', [AiCopilotController::class, 'prompt'])->name('ai.prompt');
+    Route::post('/ai/messages/{messageId}/run-export', [AiCopilotController::class, 'runExport'])->name('ai.messages.run-export');
     Route::get('/ai/conversations/{id}',    [AiCopilotController::class, 'showConversation'])->name('ai.conversations.show');
     Route::delete('/ai/conversations/{id}', [AiCopilotController::class, 'destroyConversation'])->name('ai.conversations.destroy');
+
+    // AI Excel export download — protected by Laravel's signed URL
+    // middleware. The controller additionally verifies the requesting user
+    // owns the file path, so a leaked signed URL can't be used by a
+    // different logged-in user. {path} is the export UUID; {filename} is
+    // a human-friendly download name surfaced in the browser save dialog.
+    Route::get('/ai/exports/{path}/{filename}', [AiExportDownloadController::class, 'download'])
+        ->middleware('signed')
+        ->name('ai.export.download');
 
     Route::get('/ai-insights',          [AiInsightsController::class, 'index'])->name('ai-insights');
     Route::post('/ai-insights/refresh', [AiInsightsController::class, 'refresh'])->name('ai-insights.refresh');

@@ -39,7 +39,7 @@ async function refresh() {
             insights.value = data.insights;
             generatedAt.value = data.generatedAt;
             if (!data.insights.length) {
-                error.value = "No insights generated. Check that the AI provider key is configured.";
+                error.value = "No insights generated this time. Try again, or check the logs if it keeps happening.";
             }
         } else {
             error.value = data.error || 'Could not generate insights right now.';
@@ -51,8 +51,9 @@ async function refresh() {
     }
 }
 
-const alerts = computed(() => insights.value.filter(i => i.type === 'alert'));
+const alerts      = computed(() => insights.value.filter(i => i.type === 'alert'));
 const opportunities = computed(() => insights.value.filter(i => i.type === 'opportunity'));
+const positives   = computed(() => insights.value.filter(i => i.type === 'positive'));
 
 function timeAgo(dateStr) {
     if (!dateStr) return null;
@@ -120,6 +121,19 @@ function timeAgo(dateStr) {
             </div>
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 <AiInsightCard v-for="insight in opportunities" :key="insight.id" :insight="insight" />
+            </div>
+        </div>
+
+        <div v-if="positives.length" class="card">
+            <div class="flex items-center gap-2 mb-3">
+                <svg :width="15" :height="15" viewBox="0 0 20 20" fill="currentColor" class="text-brand-300">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                </svg>
+                <h3 class="text-[14px] font-semibold text-white">What's Going Well</h3>
+                <span class="text-[11px] text-ink-3">({{ positives.length }})</span>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <AiInsightCard v-for="insight in positives" :key="insight.id" :insight="insight" />
             </div>
         </div>
     </div>

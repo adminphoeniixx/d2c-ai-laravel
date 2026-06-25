@@ -1,7 +1,7 @@
 <script setup>
 import { Head, router, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
-import { Search, UserPlus, Users, UserCheck, Clock } from 'lucide-vue-next';
+import { Search, UserPlus, Users, UserCheck, Clock, FileSignature } from 'lucide-vue-next';
 import TenantLayout from '@/Layouts/TenantLayout.vue';
 import KpiCard from '@/Components/KpiCard.vue';
 
@@ -45,9 +45,14 @@ const typeMap = {
             <h2 class="text-[20px] font-bold text-white">Employees</h2>
             <p class="text-[12px] text-ink-3 mt-1">Manage your team</p>
         </div>
-        <Link :href="route('tenant.hr.employees.create', { tenant: slug })" class="btn btn-primary">
-            <UserPlus :size="14" /> Add Employee
-        </Link>
+        <div class="flex items-center gap-2">
+            <Link :href="route('tenant.hr.templates', { tenant: slug })" class="btn btn-ghost flex items-center gap-1.5">
+                <FileSignature :size="14" /> Letter Templates
+            </Link>
+            <Link :href="route('tenant.hr.employees.create', { tenant: slug })" class="btn btn-primary">
+                <UserPlus :size="14" /> Add Employee
+            </Link>
+        </div>
     </div>
 
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">

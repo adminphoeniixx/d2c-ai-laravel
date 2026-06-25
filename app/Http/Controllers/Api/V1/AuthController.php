@@ -34,6 +34,26 @@ class AuthController extends Controller
             return response()->json(['error' => 'No active employee found with this phone number'], 404);
         }
 
+        // Test account bypass — phone 9999999999 always gets OTP 123456,
+        // no SMS sent, works in all environments for demo/QA purposes.
+        if ($phone === '9999999999') {
+            Cache::put("otp:{$phone}", [
+                'otp'         => '123456',
+                'company_id'  => $match['company_id'],
+                'employee_id' => $match['employee_id'],
+                'schema'      => $match['schema'],
+            ], 300);
+
+            return response()->json([
+                'success'       => true,
+                'message'       => 'Test account: use OTP 123456',
+                'sms_sent'      => false,
+                'company_name'  => $match['company_name'],
+                'employee_name' => $match['employee_name'],
+                'otp_debug'     => '123456',
+            ]);
+        }
+
         $otp = (string) random_int(100000, 999999);
 
         Cache::put("otp:{$phone}", [
@@ -252,6 +272,82 @@ class AuthController extends Controller
         Cache::put("reg_verified:{$phone}", true, 1800);
 
         return response()->json(['success' => true, 'message' => 'Phone verified']);
+    }
+
+    /**
+     * DELETE /api/v1/account
+     *
+     * Permanently deletes the authenticated employee's personal data from
+     * the tenant schema. Required by Google Play and Apple App Store for
+     * apps that support account creation.
+     *
+     * What gets deleted:
+     *  - Face encoding (biometric data — highest priority)
+     *  - All attendance records
+     *  - All leave requests
+     *  - The employee row itself (marked deleted / anonymised)
+     *  - The session token (logs the user out)
+     *
+     * What is NOT deleted (belongs to the employer, not the employee):
+     *  - Payroll records (financial/legal obligations)
+     *  - Historical aggregates (needed for company reporting)
+     */
+    public function deleteAccount(Request $request): JsonResponse
+    {
+        $auth = self::resolveAuth($request);
+        if (!$auth) return response()->json(['error' => 'Unauthorized'], 401);
+
+        $schema = $auth['schema'];
+        $employeeId = $auth['employee_id'];
+
+        DB::connection('tenant')->statement("SET search_path TO \"{$schema}\", public");
+
+        try {
+            DB::connection('tenant')->transaction(function () use ($employeeId) {
+                // 1. Erase biometric data first (most sensitive)
+                DB::connection('tenant')->table('employees')
+                    ->where('id', $employeeId)
+                    ->update(['face_encoding' => null, 'face_registered_at' => null]);
+
+                // 2. Delete attendance records
+                DB::connection('tenant')->table('attendances')
+                    ->where('employee_id', $employeeId)
+                    ->delete();
+
+                // 3. Delete leave requests
+                DB::connection('tenant')->table('leave_requests')
+                    ->where('employee_id', $employeeId)
+                    ->delete();
+
+                // 4. Anonymise the employee row rather than hard-delete —
+                //    this preserves foreign key integrity (payslips, etc.)
+                //    while removing all personally identifiable information.
+                DB::connection('tenant')->table('employees')
+                    ->where('id', $employeeId)
+                    ->update([
+                        'first_name'  => 'Deleted',
+                        'last_name'   => 'User',
+                        'phone'       => 'deleted_' . $employeeId,
+                        'email'       => null,
+                        'address'     => null,
+                        'status'      => 'inactive',
+                        'updated_at'  => now(),
+                    ]);
+            });
+
+            // 5. Revoke the session token
+            $token = $request->bearerToken();
+            if ($token) Cache::forget("emp_token:{$token}");
+
+        } catch (\Throwable $e) {
+            \Log::error('deleteAccount failed', ['employee_id' => $employeeId, 'error' => $e->getMessage()]);
+            return response()->json(['error' => 'Could not delete account. Please try again or contact support.'], 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Your account and personal data have been permanently deleted.',
+        ]);
     }
 
     /* ── Helpers ──────────────────────────────── */

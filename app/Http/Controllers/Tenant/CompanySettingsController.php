@@ -62,7 +62,7 @@ class CompanySettingsController extends Controller
             'name'              => ['required', 'string', 'max:120'],
             'email'             => ['required', 'email', 'max:180'],
             'gstin'             => ['nullable', 'string', 'size:15', 'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/'],
-            'business_category' => ['nullable', 'string', 'in:apparel,footwear,electronics,beauty,food,luxury,other'],
+            'business_category' => ['nullable', 'string', 'in:apparel,footwear,jewelry,electronics,beauty,wellness,food,home,baby_kids,pet,sports_fitness,luxury,books_stationery,art_craft,spiritual,other'],
             'default_gst_rate'  => ['nullable', 'numeric', 'min:0', 'max:40'],
             'currency'          => ['nullable', 'string', 'size:3'],
             'timezone'          => ['nullable', 'string', 'max:64'],

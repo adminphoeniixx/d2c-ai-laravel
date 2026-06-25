@@ -1,7 +1,8 @@
 <script setup>
 import { Head, router } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
-import { Calendar, ChevronLeft, ChevronRight, Plus, Clock, AlertTriangle, Users } from 'lucide-vue-next';
+import { Calendar, ChevronLeft, ChevronRight, Plus, Clock, AlertTriangle, Users, Link as LinkIcon } from 'lucide-vue-next';
+import { Link } from '@inertiajs/vue3';
 import TenantLayout from '@/Layouts/TenantLayout.vue';
 
 const props = defineProps({
@@ -98,6 +99,10 @@ const fmt = (v) => '₹' + new Intl.NumberFormat('en-IN').format(Math.round(v ||
                 <p class="text-[12px] text-ink-3 mt-1">Monthly attendance overview</p>
             </div>
             <div class="flex items-center gap-2">
+                <Link :href="route('tenant.hr.attendance.late-report', { tenant: slug })"
+                      class="btn btn-ghost btn-sm flex items-center gap-1.5 cursor-pointer">
+                    <AlertTriangle :size="14" /> Late Report
+                </Link>
                 <button @click="showAddModal = true" class="btn btn-primary btn-sm flex items-center gap-1.5 cursor-pointer">
                     <Plus :size="14" /> Mark Attendance
                 </button>

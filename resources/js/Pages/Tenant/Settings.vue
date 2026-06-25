@@ -11,10 +11,23 @@ const props = defineProps({
 });
 
 const categoryLabels = {
-    apparel: 'Apparel & Fashion', footwear: 'Footwear', electronics: 'Electronics',
-    beauty: 'Beauty & Personal Care', food: 'Food & Beverages', luxury: 'Luxury Goods', other: 'Other',
+    apparel: 'Apparel & Fashion', footwear: 'Footwear', jewelry: 'Jewelry & Accessories',
+    electronics: 'Electronics', beauty: 'Beauty & Personal Care', wellness: 'Health & Wellness',
+    food: 'Food & Beverages', home: 'Home & Decor', baby_kids: 'Baby & Kids', pet: 'Pet Supplies',
+    sports_fitness: 'Sports & Fitness', luxury: 'Luxury Goods', books_stationery: 'Books & Stationery',
+    art_craft: 'Art, Craft & Handmade', spiritual: 'Spiritual & Astrology', other: 'Other',
 };
-const categoryDefaultRates = { apparel: 5, footwear: 5, electronics: 18, beauty: 5, food: 5, luxury: 40, other: 18 };
+// Default GST rate suggestions per category — based on common Indian GST
+// slabs for each vertical. These are starting points the user can still
+// override per-product; not a legal/compliance guarantee. Jewelry sits at
+// 3% (the special lower slab for gold/silver/precious stone items), books
+// are largely nil-rated but stationery isn't, so 5% is a reasonable blended
+// default for that combined category.
+const categoryDefaultRates = {
+    apparel: 5, footwear: 5, jewelry: 3, electronics: 18, beauty: 5, wellness: 12,
+    food: 5, home: 18, baby_kids: 5, pet: 18, sports_fitness: 18, luxury: 40,
+    books_stationery: 5, art_craft: 12, spiritual: 18, other: 18,
+};
 
 const form = useForm({
     name: props.settings.name || '', email: props.settings.email || '',

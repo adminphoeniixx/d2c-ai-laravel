@@ -28,17 +28,84 @@ function changeDays(d) {
 
 // Upload
 const uploadForm = useForm({
-    platform: '', invoice_number: '', invoice_date: '', period_from: '', period_to: '',
+    platform: '', invoice_number: '', invoice_date: '', period_from: '', period_to: '', tax_amount: '',
     invoice_pdf: null, spend_csv: null,
 });
 
-function resetUpload() { uploadForm.reset(); }
+// Multiple PDFs are uploaded one at a time in sequence (the backend
+// contract stays single-file — each PDF gets its own AI extraction pass
+// and its own AdInvoice row, which is also what dedup-by-transaction_id
+// expects). uploadQueue holds the files staged in the modal before submit;
+// uploadProgress tracks how many have completed so the button can show
+// real progress instead of a single spinner.
+const uploadQueue = ref([]);
+const uploadProgress = ref({ done: 0, total: 0 });
+const uploadErrors = ref([]);
 
-function submitUpload() {
-    uploadForm.post(route('tenant.ads.upload-invoice', { tenant: slug }), {
-        forceFormData: true,
-        onSuccess: () => { showUpload.value = false; resetUpload(); },
-    });
+function resetUpload() {
+    uploadForm.reset();
+    uploadQueue.value = [];
+    uploadProgress.value = { done: 0, total: 0 };
+    uploadErrors.value = [];
+}
+
+function addFilesToQueue(fileList) {
+    uploadQueue.value = [...uploadQueue.value, ...Array.from(fileList)];
+}
+
+function removeFromQueue(index) {
+    uploadQueue.value = uploadQueue.value.filter((_, i) => i !== index);
+}
+
+async function submitUpload() {
+    if (uploadQueue.value.length === 0 && !uploadForm.spend_csv) return;
+
+    uploadErrors.value = [];
+
+    // No PDFs, just a CSV — single submit, same as before.
+    if (uploadQueue.value.length === 0) {
+        uploadForm.invoice_pdf = null;
+        uploadForm.post(route('tenant.ads.upload-invoice', { tenant: slug }), {
+            forceFormData: true,
+            onSuccess: () => { showUpload.value = false; resetUpload(); },
+        });
+        return;
+    }
+
+    // One or more PDFs: upload sequentially so each gets its own AI
+    // extraction + dedup pass, and so we don't fire 10 parallel AI calls
+    // at once. uploadForm.processing drives the modal's disabled state.
+    uploadForm.processing = true;
+    uploadProgress.value = { done: 0, total: uploadQueue.value.length };
+
+    for (const file of uploadQueue.value) {
+        try {
+            await new Promise((resolve, reject) => {
+                uploadForm.transform((data) => ({ ...data, invoice_pdf: file, spend_csv: null }))
+                    .post(route('tenant.ads.upload-invoice', { tenant: slug }), {
+                        forceFormData: true,
+                        preserveScroll: true,
+                        onSuccess: () => resolve(),
+                        onError: (errors) => reject(errors),
+                    });
+            });
+            uploadProgress.value.done += 1;
+        } catch (errors) {
+            uploadErrors.value.push(`${file.name}: upload failed`);
+            uploadProgress.value.done += 1;
+        }
+    }
+
+    uploadForm.transform((data) => data); // clear the transform override
+    uploadForm.processing = false;
+
+    if (uploadErrors.value.length === 0) {
+        showUpload.value = false;
+        resetUpload();
+        router.reload({ only: ['invoices', 'kpis', 'platforms', 'campaigns', 'dailySpend'] });
+    }
+    // If there were errors, leave the modal open with the error list shown
+    // so the user can see which files failed rather than silently losing them.
 }
 
 const manualForm = useForm({
@@ -51,7 +118,17 @@ function submitManual() {
 }
 function deleteInvoice(inv) {
     if (confirm(`Delete invoice ${inv.invoice_number || inv.id}?`)) {
-        router.delete(route('tenant.ads.delete-invoice', { tenant: slug, invoiceId: inv.id }));
+        router.delete(route('tenant.ads.delete-invoice', { tenant: slug, invoiceId: inv.id }), {
+            preserveScroll: true,
+            onSuccess: () => {
+                // router.delete() alone doesn't reliably refresh the
+                // invoices/kpis props in every case — explicitly request
+                // a partial reload of just the data this view depends on,
+                // so the list updates immediately instead of only after
+                // a manual page refresh.
+                router.reload({ only: ['invoices', 'kpis', 'platforms', 'campaigns', 'dailySpend'] });
+            },
+        });
     }
 }
 
@@ -65,12 +142,12 @@ const allCampaigns = [...(props.campaigns || []).map(c => ({
 </script>
 
 <template>
-<Head title="Ad Analytics" />
+<Head title="Ad Expenses" />
 <TenantLayout>
     <div class="max-w-5xl">
         <div class="flex items-center justify-between mb-5">
             <div>
-                <h2 class="text-[20px] font-bold text-white flex items-center gap-2"><Megaphone :size="20" /> Ad Analytics</h2>
+                <h2 class="text-[20px] font-bold text-white flex items-center gap-2"><Megaphone :size="20" /> Ad Expenses</h2>
                 <p class="text-[12px] text-ink-3 mt-1">Meta Ads · Google Ads · Manual Uploads</p>
             </div>
             <div class="flex items-center gap-2">
@@ -176,7 +253,10 @@ const allCampaigns = [...(props.campaigns || []).map(c => ({
                     </div>
                 </div>
                 <div class="flex items-center gap-3">
-                    <span class="text-[14px] font-bold text-white">{{ fmt(inv.total_amount) }}</span>
+                    <div class="text-right">
+                        <div class="text-[14px] font-bold text-white">{{ fmt(inv.total_amount) }}</div>
+                        <div v-if="parseFloat(inv.tax) > 0" class="text-[10px] text-ink-3">incl. {{ fmt(inv.tax) }} tax</div>
+                    </div>
                     <a v-if="inv.file_url" :href="inv.file_url" target="_blank" class="text-ink-3 hover:text-white"><Eye :size="14" /></a>
                     <button @click="deleteInvoice(inv)" class="text-ink-3 hover:text-rose-400 cursor-pointer"><Trash2 :size="14" /></button>
                 </div>
@@ -187,24 +267,59 @@ const allCampaigns = [...(props.campaigns || []).map(c => ({
         <!-- UPLOAD MODAL: Just drop files -->
         <div v-if="showUpload" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" @click.self="showUpload = false">
             <div class="bg-bg-2 border border-frost-1 rounded-2xl w-full max-w-lg mx-4 p-5">
-                <h3 class="text-[16px] font-bold text-white mb-1">Upload Invoice</h3>
-                <p class="text-[12px] text-ink-3 mb-4">Drop your invoice PDF and/or spend CSV. Everything is auto-detected.</p>
+                <h3 class="text-[16px] font-bold text-white mb-1">Upload Invoices</h3>
+                <p class="text-[12px] text-ink-3 mb-4">Drop one or more invoice PDFs and/or a spend CSV. Everything is auto-detected.</p>
                 <form @submit.prevent="submitUpload" class="space-y-3">
                     <div class="border-2 border-dashed border-frost-1 rounded-xl p-5 text-center hover:border-brand-600/40 transition">
                         <Upload :size="22" class="text-ink-3 mx-auto mb-1" />
-                        <div class="text-[11px] text-ink-3 mb-2">Invoice PDF (Meta / Google / Delhivery)</div>
-                        <input type="file" accept=".pdf" class="heyd2c-input" @change="uploadForm.invoice_pdf = $event.target.files[0]" />
+                        <div class="text-[11px] text-ink-3 mb-2">Invoice PDFs (Meta / Google / Delhivery) — select multiple</div>
+                        <input type="file" accept=".pdf" multiple class="heyd2c-input"
+                               @change="addFilesToQueue($event.target.files); $event.target.value = ''" />
                     </div>
+
+                    <!-- Queued files list -->
+                    <div v-if="uploadQueue.length" class="space-y-1.5">
+                        <div v-for="(file, i) in uploadQueue" :key="i"
+                             class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-surface-2 border border-frost-1 text-[12px]">
+                            <span class="flex items-center gap-2 text-ink truncate">
+                                <FileText :size="13" class="text-ink-3 flex-shrink-0" />
+                                <span class="truncate">{{ file.name }}</span>
+                            </span>
+                            <button v-if="!uploadForm.processing" type="button" @click="removeFromQueue(i)"
+                                    class="text-ink-3 hover:text-rose-400 cursor-pointer flex-shrink-0">
+                                <Trash2 :size="13" />
+                            </button>
+                            <span v-else-if="i < uploadProgress.done" class="text-emerald-400 flex-shrink-0 text-[11px]">✓ done</span>
+                        </div>
+                    </div>
+
                     <div class="border-2 border-dashed border-frost-1 rounded-xl p-5 text-center hover:border-brand-600/40 transition">
                         <FileText :size="22" class="text-ink-3 mx-auto mb-1" />
                         <div class="text-[11px] text-ink-3 mb-2">Spend Report CSV (optional)</div>
                         <input type="file" accept=".csv,.txt" class="heyd2c-input" @change="uploadForm.spend_csv = $event.target.files[0]" />
                     </div>
+
+                    <!-- Manual tax/GST override — only makes sense for a single
+                         invoice at a time, since a batch of files each need
+                         their own (different) tax amount, which this simple
+                         form doesn't attempt to support per-file. -->
+                    <div v-if="uploadQueue.length <= 1">
+                        <label class="heyd2c-label">Tax / GST amount (₹) — optional, overrides what was auto-detected</label>
+                        <input v-model="uploadForm.tax_amount" type="number" step="0.01" min="0" class="heyd2c-input" placeholder="Leave blank to use auto-detected tax" />
+                    </div>
+
+                    <!-- Errors from a partially-failed batch -->
+                    <div v-if="uploadErrors.length" class="rounded-lg bg-rose-500/10 border border-rose-500/30 px-3 py-2 text-[11.5px] text-rose-300 space-y-0.5">
+                        <div v-for="(err, i) in uploadErrors" :key="i">{{ err }}</div>
+                    </div>
+
                     <div class="flex gap-2 pt-2">
-                        <button type="submit" class="btn btn-primary flex-1 cursor-pointer" :disabled="uploadForm.processing">
-                            {{ uploadForm.processing ? 'Reading & Uploading…' : 'Upload & Auto-Detect' }}
+                        <button type="submit" class="btn btn-primary flex-1 cursor-pointer" :disabled="uploadForm.processing || (uploadQueue.length === 0 && !uploadForm.spend_csv)">
+                            {{ uploadForm.processing
+                                ? `Uploading ${uploadProgress.done}/${uploadProgress.total}…`
+                                : (uploadQueue.length > 1 ? `Upload ${uploadQueue.length} Invoices` : 'Upload & Auto-Detect') }}
                         </button>
-                        <button type="button" class="btn btn-ghost flex-1 cursor-pointer" @click="showUpload = false">Cancel</button>
+                        <button type="button" class="btn btn-ghost flex-1 cursor-pointer" @click="showUpload = false; resetUpload()">Cancel</button>
                     </div>
                 </form>
             </div>

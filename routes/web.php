@@ -84,3 +84,7 @@ Route::get('/terms', fn () => \Inertia\Inertia::render('Legal/Terms'))->name('te
 Route::get('/refund', fn () => \Inertia\Inertia::render('Legal/Refund'))->name('refund');
 Route::get('/contact', fn () => \Inertia\Inertia::render('Legal/Contact'))->name('contact');
 Route::get('/screencast', fn () => \Inertia\Inertia::render('Legal/Screencast'))->name('screencast');
+
+// Attendance app — required by Google Play / App Store review
+Route::get('/attendance/delete-account', fn () => \Inertia\Inertia::render('Attendance/DeleteAccount'))->name('attendance.delete-account');
+Route::get('/attendance/privacy', fn () => \Inertia\Inertia::render('Legal/Privacy'))->name('attendance.privacy');

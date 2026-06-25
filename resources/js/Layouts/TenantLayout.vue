@@ -7,7 +7,7 @@ import {
     Menu, X, RefreshCw, Plug, Settings as SettingsIcon, Users, FileSignature, ClipboardList,
     Clock, Truck, Building2, Boxes, HardHat, CalendarDays, CalendarCheck, AlertTriangle, Timer,
     Headphones, MessageSquare, HelpCircle, FolderKanban, Shield, UserPlus, Landmark,
-    CreditCard, Zap, ShieldCheck,
+    CreditCard, Zap, ShieldCheck, ArrowLeftRight, Scale, BadgePercent, RefreshCcw, Package,
 } from 'lucide-vue-next';
 import LogoMark from '@/Components/LogoMark.vue';
 import FlashToasts from '@/Components/FlashToasts.vue';
@@ -48,61 +48,76 @@ const nav = computed(() => ([
             { name: 'AI Copilot',     icon: Bot,             href: route('tenant.ai', { tenant: slug.value }), active: route().current('tenant.ai') },
             { name: 'Analytics',      icon: LayoutDashboard, href: route('tenant.dashboard',  { tenant: slug.value }), active: route().current('tenant.dashboard') },
             { name: 'P&L Report',     icon: FileText,        href: route('tenant.pnl',        { tenant: slug.value }), active: route().current('tenant.pnl') },
-            { name: 'GST Reports',    icon: IndianRupee,     href: route('tenant.gst', { tenant: slug.value }), active: route().current('tenant.gst*') },
         ],
     },
     {
-        label: 'OVERVIEW',
+        label: 'EXPENSES',
         items: [
-            { name: 'Daily Expenses', icon: Receipt,         href: route('tenant.expenses',   { tenant: slug.value }), active: route().current('tenant.expenses*') },
-            { name: 'Subscriptions',  icon: CreditCard,      href: route('tenant.saas-subscriptions.index', { tenant: slug.value }), active: route().current('tenant.saas-subscriptions*') },
-            { name: 'Orders',         icon: ShoppingBag,     href: route('tenant.orders',     { tenant: slug.value }), active: route().current('tenant.orders*') },
-            { name: 'Ad Analytics',   icon: Megaphone,       href: route('tenant.ads',        { tenant: slug.value }), active: route().current('tenant.ads') },
-            { name: 'Payment Gateway',icon: CreditCard,      href: route('tenant.pg.index',   { tenant: slug.value }), active: route().current('tenant.pg*') },
-            { name: 'Logistics',      icon: Truck,           href: route('tenant.logistics.index', { tenant: slug.value }), active: route().current('tenant.logistics*') },
-            { name: 'Banking',        icon: Landmark,        href: route('tenant.banking.index', { tenant: slug.value }), active: route().current('tenant.banking*') },
+            { name: 'Daily Expenses',   icon: Receipt,      href: route('tenant.expenses',   { tenant: slug.value }), active: route().current('tenant.expenses*') },
+            { name: 'Ad Expenses',      icon: Megaphone,    href: route('tenant.ads',        { tenant: slug.value }), active: route().current('tenant.ads') },
+            { name: 'Payment Gateway',  icon: CreditCard,   href: route('tenant.pg.index',   { tenant: slug.value }), active: route().current('tenant.pg*') },
+            { name: 'Logistics',        icon: Truck,        href: route('tenant.logistics.index', { tenant: slug.value }), active: route().current('tenant.logistics*') },
+            { name: 'Subscriptions',    icon: BadgePercent, href: route('tenant.saas-subscriptions.index', { tenant: slug.value }), active: route().current('tenant.saas-subscriptions*') },
+        ],
+    },
+    {
+        label: 'ORDERS',
+        items: [
+            { name: 'Orders',        icon: ShoppingBag, href: route('tenant.orders',              { tenant: slug.value }), active: route().current('tenant.orders*') },
+            { name: 'Marketplaces',  icon: Store,       href: route('tenant.marketplaces.index',  { tenant: slug.value }), active: route().current('tenant.marketplaces*') },
+        ],
+    },
+    {
+        label: 'PRODUCTS',
+        items: [
+            { name: 'Inventory',             icon: Boxes,     href: route('tenant.inventory-mgmt.index',  { tenant: slug.value }), active: route().current('tenant.inventory-mgmt*') },
+            { name: 'Purchase Orders',       icon: Truck,     href: route('tenant.purchase-orders.index', { tenant: slug.value }), active: route().current('tenant.purchase-orders*') },
+            { name: 'Raw Materials',         icon: Boxes,     href: route('tenant.raw-materials.index',   { tenant: slug.value }), active: route().current('tenant.raw-materials*') },
+            { name: 'Vendors',               icon: Building2, href: route('tenant.vendors.index',         { tenant: slug.value }), active: route().current('tenant.vendors*') },
+            { name: 'Daily Return/Exchange', icon: RefreshCcw,href: route('tenant.cashflow',              { tenant: slug.value }), active: route().current('tenant.cashflow') },
+        ],
+    },
+    {
+        label: 'PACKAGING',
+        items: [
+            { name: 'Inventory',       icon: Boxes, href: route('tenant.packaging.inventory.index', { tenant: slug.value }), active: route().current('tenant.packaging.inventory*') },
+            { name: 'Purchase Orders', icon: Truck, href: route('tenant.packaging.orders.index',    { tenant: slug.value }), active: route().current('tenant.packaging.orders*') },
         ],
     },
     {
         label: 'HR',
         items: [
-            { name: 'Employees',        icon: Users,          href: route('tenant.hr.employees',            { tenant: slug.value }), active: route().current('tenant.hr.employees*') },
-            { name: 'Attendance',       icon: Clock,          href: route('tenant.hr.attendance',           { tenant: slug.value }), active: route().current('tenant.hr.attendance') },
-            { name: 'Late Report',      icon: AlertTriangle,  href: route('tenant.hr.attendance.late-report',{ tenant: slug.value }), active: route().current('tenant.hr.attendance.late-report') },
-            { name: 'Holidays',         icon: CalendarDays,   href: route('tenant.hr.holidays',             { tenant: slug.value }), active: route().current('tenant.hr.holidays*') },
-            { name: 'Leave Types',      icon: CalendarCheck,  href: route('tenant.hr.leaves.types',         { tenant: slug.value }), active: route().current('tenant.hr.leaves.types*') },
-            { name: 'Leave Requests',   icon: Timer,          href: route('tenant.hr.leaves.requests',      { tenant: slug.value }), active: route().current('tenant.hr.leaves.requests*') },
-            { name: 'Leave Balances',   icon: ClipboardList,  href: route('tenant.hr.leaves.balances',      { tenant: slug.value }), active: route().current('tenant.hr.leaves.balances*') },
-            { name: 'Letter Templates', icon: FileSignature,  href: route('tenant.hr.templates',            { tenant: slug.value }), active: route().current('tenant.hr.templates*') },
-            { name: 'Create Letter',    icon: FileText,       href: route('tenant.hr.letters.create',       { tenant: slug.value }), active: route().current('tenant.hr.letters*') },
+            { name: 'Employees',      icon: Users,         href: route('tenant.hr.employees',         { tenant: slug.value }), active: route().current('tenant.hr.employees*') },
+            { name: 'Attendance',     icon: Clock,         href: route('tenant.hr.attendance',        { tenant: slug.value }), active: route().current('tenant.hr.attendance*') },
+            { name: 'Leave Requests', icon: Timer,         href: route('tenant.hr.leaves.requests',   { tenant: slug.value }), active: route().current('tenant.hr.leaves.requests*') || route().current('tenant.hr.leaves.types*') || route().current('tenant.hr.leaves.balances*') },
+            { name: 'Payroll',        icon: Wallet,        href: route('tenant.payroll.index',        { tenant: slug.value }), active: route().current('tenant.payroll*') },
+            { name: 'Holidays',       icon: CalendarDays,  href: route('tenant.hr.holidays',          { tenant: slug.value }), active: route().current('tenant.hr.holidays*') },
         ],
     },
     {
-        label: 'OPERATIONS',
-        badge: 'NEW',
+        label: 'COMPLIANCES',
         items: [
-            { name: 'Payroll',          icon: Wallet,         href: route('tenant.payroll.index',          { tenant: slug.value }), active: route().current('tenant.payroll*') },
-            { name: 'Inventory',        icon: Boxes,          href: route('tenant.inventory-mgmt.index',   { tenant: slug.value }), active: route().current('tenant.inventory-mgmt*') },
-            { name: 'Purchase Orders',  icon: Truck,          href: route('tenant.purchase-orders.index',  { tenant: slug.value }), active: route().current('tenant.purchase-orders*') },
-            { name: 'Vendors',          icon: Building2,      href: route('tenant.vendors.index',          { tenant: slug.value }), active: route().current('tenant.vendors*') },
-            { name: 'Marketplaces',     icon: Store,          href: route('tenant.marketplaces.index',     { tenant: slug.value }), active: route().current('tenant.marketplaces*') },
-            { name: 'Daily Exchange', icon: TrendingUp,     href: route('tenant.cashflow',               { tenant: slug.value }), active: route().current('tenant.cashflow') },
+            { name: 'GST Reports', icon: IndianRupee, href: route('tenant.gst',          { tenant: slug.value }), active: route().current('tenant.gst*') },
+            { name: 'Banking',     icon: Landmark,    href: route('tenant.banking.index', { tenant: slug.value }), active: route().current('tenant.banking*') },
+            { name: 'PF',         icon: Scale,       href: route('tenant.compliances.pf',   { tenant: slug.value }), active: route().current('tenant.compliances.pf*') },
+            { name: 'ESIC',       icon: ShieldCheck, href: route('tenant.compliances.esic', { tenant: slug.value }), active: route().current('tenant.compliances.esic*') },
         ],
     },
     {
         label: 'SUPPORT',
         items: [
-            { name: 'Tickets',    icon: Headphones,    href: route('tenant.support.index',      { tenant: slug.value }), active: route().current('tenant.support.index') || route().current('tenant.support.show') },
-            { name: 'Categories', icon: FolderKanban,  href: route('tenant.support.categories', { tenant: slug.value }), active: route().current('tenant.support.categories') },
-            { name: 'FAQ',        icon: HelpCircle,    href: route('tenant.support.faqs',       { tenant: slug.value }), active: route().current('tenant.support.faqs') },
+            { name: 'Tickets',    icon: Headphones,   href: route('tenant.support.index',      { tenant: slug.value }), active: route().current('tenant.support.index') || route().current('tenant.support.show') },
+            { name: 'Categories', icon: FolderKanban, href: route('tenant.support.categories', { tenant: slug.value }), active: route().current('tenant.support.categories') },
+            { name: 'FAQ',        icon: HelpCircle,   href: route('tenant.support.faqs',       { tenant: slug.value }), active: route().current('tenant.support.faqs') },
         ],
     },
     {
         label: '',
         items: [
-            { name: 'KYC',      icon: ShieldCheck,  href: route('tenant.kyc',        { tenant: slug.value }), active: route().current('tenant.kyc') },
-            { name: 'Team',     icon: Shield,       href: route('tenant.team.index', { tenant: slug.value }), active: route().current('tenant.team*') },
-            { name: 'Settings', icon: SettingsIcon, href: route('tenant.settings',   { tenant: slug.value }), active: route().current('tenant.settings') },
+            { name: 'Subscription', icon: Zap,          href: route('tenant.subscription.plans', { tenant: slug.value }), active: route().current('tenant.subscription*') },
+            { name: 'KYC',         icon: ShieldCheck,   href: route('tenant.kyc',        { tenant: slug.value }), active: route().current('tenant.kyc') },
+            { name: 'Team',        icon: Shield,        href: route('tenant.team.index', { tenant: slug.value }), active: route().current('tenant.team*') },
+            { name: 'Settings',    icon: SettingsIcon,  href: route('tenant.settings',   { tenant: slug.value }), active: route().current('tenant.settings') },
         ],
     },
 ]));
@@ -141,15 +156,20 @@ const pageTitle = computed(() => {
     if (route().current('tenant.dashboard')) return 'Insights';
     if (route().current('tenant.pnl'))       return 'P&L Report';
     if (route().current('tenant.expenses'))  return 'Daily Expenses';
-    if (route().current('tenant.saas-subscriptions*')) return 'SaaS Subscriptions';
+    if (route().current('tenant.saas-subscriptions*')) return 'Subscriptions';
     if (route().current('tenant.orders'))    return 'Orders';
     if (route().current('tenant.marketplaces*')) return 'Marketplaces';
-    if (route().current('tenant.ads'))       return 'Ad Analytics';
-    if (route().current('tenant.inventory')) return 'Inventory Forecast';
-    if (route().current('tenant.payroll'))   return 'Payroll Intelligence';
-    if (route().current('tenant.cashflow'))  return 'Cash Flow';
+    if (route().current('tenant.ads'))       return 'Ad Expenses';
+    if (route().current('tenant.inventory-mgmt*')) return 'Inventory';
+    if (route().current('tenant.payroll*'))  return 'Payroll';
+    if (route().current('tenant.cashflow'))  return 'Daily Return/Exchange';
     if (route().current('tenant.ai'))        return 'AI Copilot';
     if (route().current('tenant.ai-insights')) return 'AI Insights';
+    if (route().current('tenant.gst*'))      return 'GST Reports';
+    if (route().current('tenant.banking*'))  return 'Banking';
+    if (route().current('tenant.compliances.pf*'))   return 'Provident Fund';
+    if (route().current('tenant.compliances.esic*')) return 'ESIC';
+    if (route().current('tenant.ads'))       return 'Ad Expenses';
     return 'heyd2c';
 });
 

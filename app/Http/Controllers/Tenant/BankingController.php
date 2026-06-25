@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ProcessBankStatement;
 use App\Models\Tenant\BankAccount;
 use App\Models\Tenant\BankTransaction;
 use App\Services\Banking\BankStatementParser;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -65,79 +68,53 @@ class BankingController extends Controller
     public function smartUpload(Request $request): RedirectResponse
     {
         $request->validate([
-            'statement' => ['required', 'file', 'mimes:csv,txt', 'max:10240'],
+            'statement'    => ['required', 'file', 'max:20480'],
+            'pdf_password' => ['nullable', 'string', 'max:100'],
         ]);
 
-        $parser = new BankStatementParser();
-        $result = $parser->parse($request->file('statement')->getRealPath());
+        $file      = $request->file('statement');
+        $extension = strtolower($file->getClientOriginalExtension());
+        $password  = $request->input('pdf_password') ?: null;
+        $fileName  = $file->getClientOriginalName();
+        $fileSize  = $file->getSize();
+        $company   = app('current_company');
 
-        if (empty($result['transactions'])) {
-            return back()->with('error', 'No transactions found. Check the CSV format.');
-        }
+        // Save file to persistent storage so the background job can access it
+        $storagePath = 'banking_uploads/' . Str::uuid() . '.' . $extension;
+        Storage::disk('local')->put($storagePath, file_get_contents($file->getRealPath()));
 
-        $bankInfo = $result['bank'] ?? [];
-        $bankName = $bankInfo['name'] ?? 'Unknown Bank';
+        // Also save debug copy
+        copy($file->getRealPath(), '/tmp/last_banking_upload.' . $extension);
 
-        // Auto-find or create bank account
-        $account = BankAccount::where('bank_name', 'ilike', "%{$bankName}%")->first();
+        // Create audit log entry immediately so we can track status
+        $logId = DB::connection('pgsql')->table('banking_upload_logs')->insertGetId([
+            'company_id'           => $company->id,
+            'company_slug'         => $company->slug,
+            'filename'             => $fileName,
+            'file_type'            => $extension,
+            'file_size'            => $fileSize,
+            'status'               => 'queued',
+            'transactions_parsed'  => 0,
+            'transactions_imported'=> 0,
+            'transactions_skipped' => 0,
+            'file_preview'         => mb_substr(file_get_contents($file->getRealPath()), 0, 600),
+            'created_at'           => now(),
+            'updated_at'           => now(),
+        ]);
 
-        if (!$account) {
-            // Extract last 4 digits of account number for display
-            $last4 = '';
-            if (!empty($bankInfo['account_number'])) {
-                $last4 = substr($bankInfo['account_number'], -4);
-            }
+        // Dispatch background job — no timeout issues
+        ProcessBankStatement::dispatch(
+            $company->id,
+            $company->slug,
+            $storagePath,
+            $extension,
+            $password,
+            $fileName,
+            $fileSize,
+            $logId,
+        )->onQueue('default');
 
-            $account = BankAccount::create([
-                'name'           => $bankName . ($last4 ? " •{$last4}" : ''),
-                'bank_name'      => strtolower(explode(' ', $bankName)[0]), // hdfc, icici, sbi
-                'account_number' => $bankInfo['account_number'] ?? null,
-                'ifsc_code'      => $bankInfo['ifsc'] ?? null,
-                'account_type'   => 'current',
-            ]);
-        }
-
-        // AI categorize
-        try {
-            $result['transactions'] = $parser->aiCategorize($result['transactions']);
-        } catch (\Throwable $e) {}
-
-        $batch = Str::random(16);
-        $imported = 0;
-        $skipped = 0;
-
-        foreach ($result['transactions'] as $t) {
-            // Dedup by date + type + amount + description
-            $exists = BankTransaction::where('bank_account_id', $account->id)
-                ->where('date', $t['date'])
-                ->where('type', $t['type'])
-                ->where('amount', $t['amount'])
-                ->where('description', $t['description'] ?? '')
-                ->exists();
-
-            if ($exists) { $skipped++; continue; }
-
-            BankTransaction::create([
-                'bank_account_id' => $account->id,
-                'date'            => $t['date'],
-                'type'            => $t['type'],
-                'amount'          => $t['amount'],
-                'balance'         => $t['balance'] ?? null,
-                'description'     => $t['description'] ?? null,
-                'reference'       => $t['reference'] ?? null,
-                'category'        => $t['category'] ?? 'other',
-                'vendor'          => $t['vendor'] ?? 'Miscellaneous',
-                'source'          => 'import',
-                'upload_batch'    => $batch,
-                'raw_data'        => $t,
-            ]);
-            $imported++;
-        }
-
-        $msg = "✓ {$bankName} statement: {$imported} transactions imported.";
-        if ($skipped > 0) $msg .= " ({$skipped} duplicates skipped)";
-
-        return back()->with('success', $msg);
+        return back()->with('success', '⏳ Statement queued for processing. Transactions will appear within 1-2 minutes. Refresh the page to see results.');
     }
 
     /**
@@ -212,16 +189,32 @@ class BankingController extends Controller
     public function uploadStatement(Request $request, string $tenant, string $accountId): RedirectResponse
     {
         $account = BankAccount::findOrFail($accountId);
-        $request->validate(['statement' => ['required', 'file', 'mimes:csv,txt', 'max:10240']]);
+        $request->validate([
+            'statement'    => ['required', 'file', 'max:20480'],
+            'pdf_password' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $file      = $request->file('statement');
+        $extension = strtolower($file->getClientOriginalExtension());
+        $password  = $request->input('pdf_password');
 
         $parser = new BankStatementParser();
-        $result = $parser->parse($request->file('statement')->getRealPath());
+        $result = $parser->parseFile($file->getRealPath(), $extension, $password);
 
-        if (empty($result['transactions'])) {
-            return back()->with('error', 'No transactions found.');
+        // Surface password-required error clearly so the user knows to retry
+        if (!empty($result['needs_password'])) {
+            return back()->with('error', 'This PDF is password-protected. Please enter the password and try again.');
         }
 
-        try { $result['transactions'] = $parser->aiCategorize($result['transactions']); } catch (\Throwable $e) {}
+        if (!empty($result['errors'])) {
+            return back()->with('error', implode(' ', $result['errors']));
+        }
+
+        if (empty($result['transactions'])) {
+            return back()->with('error', 'No transactions found in this file. Make sure it\'s a valid bank statement export.');
+        }
+
+        // Categorization already applied inside parseFile.
 
         $batch = Str::random(16);
         $imported = 0; $skipped = 0;

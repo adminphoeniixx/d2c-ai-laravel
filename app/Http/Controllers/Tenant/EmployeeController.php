@@ -98,7 +98,13 @@ class EmployeeController extends Controller
             'notes'           => ['nullable', 'string'],
         ]);
 
-        Employee::create($validated);
+        Employee::create(array_merge($validated, [
+            'hra'               => $validated['hra'] ?? 0,
+            'special_allowance' => $validated['special_allowance'] ?? 0,
+            'other_allowance'   => $validated['other_allowance'] ?? 0,
+            'basic_salary'      => $validated['basic_salary'] ?? 0,
+            'ctc_annual'        => $validated['ctc_annual'] ?? 0,
+        ]));
 
         $slug = window_slug();
         return redirect()->route('tenant.hr.employees', ['tenant' => $slug])
